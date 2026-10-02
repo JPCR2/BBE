@@ -221,3 +221,54 @@ model BajaArticulo {
   @@index([bajaId])
   @@map("bajas_articulos")
 }
+
+// -----------------------------------------------------------------------------
+// Acceso al sistema (parte 6)
+// -----------------------------------------------------------------------------
+
+/// ADMIN: todo, incluida la gestión de usuarios. TECNICO: todo menos usuarios.
+enum RolUsuario {
+  ADMIN
+  TECNICO
+}
+
+/// Persona del Departamento de Sistemas que entra al sistema.
+/// No se borra: se desactiva (activo = false) y ya no puede iniciar sesión.
+model Usuario {
+  id               Int        @id @default(autoincrement())
+  /// Nombre con el que inicia sesión, en minúsculas (p. ej. "jpolanco").
+  usuario          String     @unique @db.VarChar(40)
+  /// Nombre completo que se muestra en pantalla.
+  nombre           String     @db.VarChar(100)
+  /// Hash bcrypt; la contraseña nunca se guarda en texto.
+  contrasenaHash   String     @db.VarChar(100)
+  rol              RolUsuario @default(TECNICO)
+  activo           Boolean    @default(true)
+  /// Intentos fallidos seguidos; al llegar al límite se bloquea un rato.
+  intentosFallidos Int        @default(0)
+  bloqueadoHasta   DateTime?
+  ultimoAcceso     DateTime?
+  creadoEn         DateTime   @default(now())
+  actualizadoEn    DateTime   @updatedAt
+
+  sesiones Sesion[]
+
+  @@map("usuarios")
+}
+
+/// Sesiones abiertas (express-session). Guardarlas en la base permite
+/// reiniciar la API sin sacar a nadie y cerrar las sesiones de un usuario
+/// al desactivarlo o cambiarle la contraseña.
+model Sesion {
+  /// Identificador aleatorio que viaja en la cookie (firmado).
+  id        String   @id @db.VarChar(128)
+  usuarioId Int?
+  datos     String   @db.Text
+  expiraEn  DateTime
+
+  usuario Usuario? @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([expiraEn])
+  @@index([usuarioId])
+  @@map("sesiones")
+}

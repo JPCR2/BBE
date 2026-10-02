@@ -1,6 +1,9 @@
 import "../../src/lib/entorno.ts";
+import type { Express } from "express";
+import request from "supertest";
 import { expect } from "vitest";
 import { crearClientePrisma } from "../../src/lib/clientePrisma.ts";
+import { cifrarContrasena } from "../../src/modulos/autenticacion/autenticacion.modulo.ts";
 
 const url = process.env.TEST_DATABASE_URL;
 if (!url) throw new Error("Falta TEST_DATABASE_URL en el archivo .env");
@@ -72,4 +75,40 @@ export async function crearEquipo(datos: Partial<{ numeroSerie: string; marca: s
   return db.equipo.create({
     data: { numeroSerie: `SN-${siguiente()}`, tipo: "LAPTOP", marca: "Marca", modelo: "Modelo", ...datos },
   });
+}
+
+// -----------------------------------------------------------------------------
+// Usuarios y sesiones
+// -----------------------------------------------------------------------------
+
+export const CONTRASENA_PRUEBA = "Contrasena-de-prueba-1";
+let hashPrueba: Promise<string> | undefined;
+
+/** Crea (o reactiva) un usuario con la contraseña CONTRASENA_PRUEBA. */
+export async function crearUsuario(datos: Partial<{ usuario: string; nombre: string; rol: "ADMIN" | "TECNICO"; activo: boolean }> = {}) {
+  const usuario = datos.usuario ?? `usuario${siguiente()}`;
+  hashPrueba ??= cifrarContrasena(CONTRASENA_PRUEBA);
+  const fila = {
+    nombre: datos.nombre ?? "Usuario de Prueba", rol: datos.rol ?? "TECNICO", activo: datos.activo ?? true,
+    contrasenaHash: await hashPrueba, intentosFallidos: 0, bloqueadoHasta: null,
+  };
+  return db.usuario.upsert({ where: { usuario }, create: { usuario, ...fila }, update: fila });
+}
+
+/** Vacía usuarios y sesiones (solo las pruebas de acceso lo necesitan). */
+export async function limpiarUsuarios(): Promise<void> {
+  await db.sesion.deleteMany();
+  await db.usuario.deleteMany();
+}
+
+/**
+ * Devuelve un cliente de supertest que ya inició sesión (guarda la cookie).
+ * Se usa igual que request(app): sesion.get("/api/equipos").
+ */
+export async function iniciarSesionDePrueba(app: Express, datos: Parameters<typeof crearUsuario>[0] = {}) {
+  const usuario = await crearUsuario({ usuario: "prueba.tecnico", ...datos });
+  const agente = request.agent(app);
+  const res = await agente.post("/api/auth/iniciar-sesion").send({ usuario: usuario.usuario, contrasena: CONTRASENA_PRUEBA });
+  expect(res.status, "no se pudo iniciar la sesión de prueba").toBe(200);
+  return agente;
 }

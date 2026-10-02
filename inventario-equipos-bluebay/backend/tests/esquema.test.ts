@@ -1,17 +1,17 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { fechaATexto, fechaDesdeTexto, hoyEnElHotel, sumarDias } from "../src/lib/fechas.ts";
-import { crearDepartamento, crearEmpleado, crearEquipo, db, limpiarTablas, rechazo } from "./helpers/contexto.ts";
+import { crearDepartamento, crearEmpleado, crearEquipo, crearUsuario, db, limpiarTablas, limpiarUsuarios, rechazo } from "./helpers/contexto.ts";
 
 beforeEach(limpiarTablas);
 afterAll(() => db.$disconnect());
 
 // =============================================================================
 describe("Estructura de la base de datos", () => {
-  it("tiene las 7 tablas, los 4 triggers y las 24 restricciones CHECK", async () => {
+  it("tiene las 9 tablas, los 4 triggers y las 26 restricciones CHECK", async () => {
     const tablas = await db.$queryRaw<{ nombre: string }[]>`
       SELECT TABLE_NAME AS nombre FROM information_schema.TABLES
       WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME`;
-    expect(tablas.map((t) => t.nombre)).toEqual(["asignaciones", "bajas", "bajas_articulos", "departamentos", "empleados", "equipos", "mantenimientos"]);
+    expect(tablas.map((t) => t.nombre)).toEqual(["asignaciones", "bajas", "bajas_articulos", "departamentos", "empleados", "equipos", "mantenimientos", "sesiones", "usuarios"]);
 
     const triggers = await db.$queryRaw<{ nombre: string }[]>`
       SELECT TRIGGER_NAME AS nombre FROM information_schema.TRIGGERS
@@ -26,7 +26,7 @@ describe("Estructura de la base de datos", () => {
     const checks = await db.$queryRaw<{ total: bigint }[]>`
       SELECT COUNT(*) AS total FROM information_schema.CHECK_CONSTRAINTS
       WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_NAME LIKE 'chk\\_%'`;
-    expect(Number(checks[0]!.total)).toBe(24);
+    expect(Number(checks[0]!.total)).toBe(26);
   });
 });
 
@@ -389,6 +389,45 @@ describe("Mantenimiento", () => {
     });
     expect(vencidos.map((m) => m.descripcion)).toEqual(["vencido"]);
     expect(proximos.map((m) => m.descripcion)).toEqual(["proximo"]);
+  });
+});
+
+// =============================================================================
+describe("Usuario y Sesion", () => {
+  beforeEach(limpiarUsuarios);
+
+  it("la base rechaza nombres de usuario con mayúsculas, espacios, acentos o muy cortos", async () => {
+    for (const usuario of ["JPolanco", "j polanco", "josé", "ab", ""]) {
+      const error = await rechazo(db.usuario.create({ data: { usuario, nombre: "X", contrasenaHash: "x" } }));
+      expect(error.message, usuario).toMatch(/chk_usuarios_usuario/);
+    }
+    await expect(db.usuario.create({ data: { usuario: "j.polanco-2_b", nombre: "Joel", contrasenaHash: "x" } })).resolves.toBeTruthy();
+  });
+
+  it("no permite dos usuarios con el mismo nombre de usuario", async () => {
+    await crearUsuario({ usuario: "jpolanco" });
+    const error = await rechazo(db.usuario.create({ data: { usuario: "jpolanco", nombre: "Otro", contrasenaHash: "x" } }));
+    expect(error.message).toMatch(/usuarios_usuario_key/);
+  });
+
+  it("el rol por defecto es TECNICO y el usuario empieza activo y sin intentos fallidos", async () => {
+    const usuario = await db.usuario.create({ data: { usuario: "nuevo", nombre: "Nuevo", contrasenaHash: "x" } });
+    expect(usuario).toMatchObject({ rol: "TECNICO", activo: true, intentosFallidos: 0, bloqueadoHasta: null, ultimoAcceso: null });
+  });
+
+  it("el id de sesión distingue mayúsculas de minúsculas", async () => {
+    const expiraEn = new Date(Date.now() + 60_000);
+    await db.sesion.create({ data: { id: "AbC123", datos: "{}", expiraEn } });
+    await db.sesion.create({ data: { id: "abc123", datos: "{}", expiraEn } });
+    expect(await db.sesion.findUnique({ where: { id: "ABC123" } })).toBeNull();
+    expect((await db.sesion.findUnique({ where: { id: "AbC123" } }))?.id).toBe("AbC123");
+  });
+
+  it("al borrar un usuario se borran sus sesiones", async () => {
+    const usuario = await crearUsuario();
+    await db.sesion.create({ data: { id: "s1", usuarioId: usuario.id, datos: "{}", expiraEn: new Date(Date.now() + 60_000) } });
+    await db.usuario.delete({ where: { id: usuario.id } });
+    expect(await db.sesion.count()).toBe(0);
   });
 });
 

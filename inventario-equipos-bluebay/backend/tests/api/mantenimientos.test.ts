@@ -1,13 +1,14 @@
-import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { crearApp } from "../../src/app.ts";
 import { fechaDesdeTexto } from "../../src/lib/fechas.ts";
-import { crearEquipo, db, limpiarTablas } from "../helpers/contexto.ts";
+import { crearEquipo, db, limpiarTablas, iniciarSesionDePrueba } from "../helpers/contexto.ts";
 
 // "Ahora" fijo: 22 de septiembre de 2026 a las 11:30 de la mañana en Playa del Carmen.
 let ahora = new Date("2026-09-22T16:30:00Z");
 const app = crearApp({ db, reloj: () => ahora });
-const api = () => request(app);
+// Todas las rutas exigen sesión: las pruebas usan un técnico ya autenticado.
+const sesion = await iniciarSesionDePrueba(app);
+const api = () => sesion;
 
 beforeEach(async () => {
   ahora = new Date("2026-09-22T16:30:00Z");

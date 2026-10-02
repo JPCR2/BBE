@@ -1,15 +1,16 @@
-import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { crearApp } from "../../src/app.ts";
 import { fechaDesdeTexto } from "../../src/lib/fechas.ts";
 import { formatoFolio, type DetalleBaja } from "../../src/modulos/bajas/bajas.modulo.ts";
 import { fechaFormatoHotel, generarPdfBaja, renglonesDelActa, textoAnios } from "../../src/modulos/reportes/reporteBaja.ts";
-import { crearEmpleado, crearEquipo, db, limpiarTablas, rechazo } from "../helpers/contexto.ts";
+import { crearEmpleado, crearEquipo, db, limpiarTablas, rechazo, iniciarSesionDePrueba } from "../helpers/contexto.ts";
 import { paginasDelPdf, textoDelPdf } from "../helpers/pdf.ts";
 
 // "Ahora" fijo: martes 29 de septiembre de 2026, 11:00 en Playa del Carmen.
 const app = crearApp({ db, reloj: () => new Date("2026-09-29T16:00:00Z") });
-const api = () => request(app);
+// Todas las rutas exigen sesión: las pruebas usan un técnico ya autenticado.
+const sesion = await iniciarSesionDePrueba(app);
+const api = () => sesion;
 
 beforeEach(limpiarTablas);
 afterAll(() => db.$disconnect());

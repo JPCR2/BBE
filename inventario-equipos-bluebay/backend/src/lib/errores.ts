@@ -30,6 +30,7 @@ export const rutaNoEncontrada: RequestHandler = (req, _res, next) => {
 const DUPLICADOS: Record<string, { campo: string; mensaje: string }> = {
   equipos_numeroSerie_key: { campo: "numeroSerie", mensaje: "Ya existe un equipo con ese número de serie." },
   empleados_numeroEmpleado_key: { campo: "numeroEmpleado", mensaje: "Ya existe un empleado con ese número." },
+  usuarios_usuario_key: { campo: "usuario", mensaje: "Ya existe un usuario con ese nombre." },
   departamentos_nombre_key: { campo: "nombre", mensaje: "Ya existe un departamento con ese nombre." },
 };
 

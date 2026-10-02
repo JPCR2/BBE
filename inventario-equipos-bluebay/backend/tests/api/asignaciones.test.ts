@@ -1,10 +1,11 @@
-import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { crearApp } from "../../src/app.ts";
-import { crearEmpleado, crearEquipo, db, limpiarTablas } from "../helpers/contexto.ts";
+import { crearEmpleado, crearEquipo, db, limpiarTablas, iniciarSesionDePrueba } from "../helpers/contexto.ts";
 
 const app = crearApp({ db });
-const api = () => request(app);
+// Todas las rutas exigen sesión: las pruebas usan un técnico ya autenticado.
+const sesion = await iniciarSesionDePrueba(app);
+const api = () => sesion;
 
 beforeEach(limpiarTablas);
 afterAll(() => db.$disconnect());
