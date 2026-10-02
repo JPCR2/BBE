@@ -2,7 +2,7 @@
 
 Blue Bay Grand Esmeralda — Departamento de Sistemas. Prototipo (prueba de concepto) de ejecución local.
 
-**Estado:** partes 1 a 5 de 6 terminadas — esquema de base de datos, Inicio + Inventario, Empleados + Departamentos + Asignaciones, Mantenimiento (calendario, historial y avisos), reporte imprimible de alta, y Bajas con su reporte imprimible.
+**Estado:** las 6 partes terminadas — esquema de base de datos, Inicio + Inventario, Empleados + Departamentos + Asignaciones, Mantenimiento (calendario, historial y avisos), reporte imprimible de alta, Bajas con su reporte imprimible, e inicio de sesión con usuarios y roles.
 
 | Capa | Tecnología |
 |---|---|
@@ -10,7 +10,7 @@ Blue Bay Grand Esmeralda — Departamento de Sistemas. Prototipo (prueba de conc
 | Acceso a datos | Prisma ORM 7 con el adaptador oficial de MariaDB |
 | Base de datos | MariaDB (local) |
 | Frontend | Vue 3 + Vite + Vue Router |
-| Autenticación | bcrypt + express-session *(parte 6)* |
+| Autenticación | bcrypt (bcryptjs) + express-session, sesiones guardadas en la base |
 | Reportes imprimibles | PDFKit (alta y baja) |
 
 ## Requisitos
@@ -50,8 +50,11 @@ cp .env.example .env          # en Windows (PowerShell): copy .env.example .env
 npm install                   # también genera el cliente de Prisma
 npx prisma migrate dev        # debe aplicar las migraciones SIN proponer una nueva
 npm run db:seed               # datos ficticios DEMO (opcional)
+npm run usuario:admin         # crea tu usuario ADMINISTRADOR (pide usuario, nombre y contraseña)
 npm run dev                   # API en http://127.0.0.1:3000/api
 ```
+
+En el `.env` pon en `SESION_SECRETO` una clave larga y al azar (el `.env.example` dice cómo generarla). Si falta, la API funciona, pero cada reinicio cierra todas las sesiones.
 
 ### 3. Frontend (en otra terminal)
 
@@ -66,8 +69,8 @@ Vite reenvía las llamadas a `/api` hacia el backend, así que ambos deben estar
 ### 4. Pruebas
 
 ```bash
-cd backend && npm test        # 276 pruebas contra la base de datos real (base inventario_test)
-cd frontend && npm test       # 134 pruebas de componentes y utilidades
+cd backend && npm test        # 324 pruebas contra la base de datos real (base inventario_test)
+cd frontend && npm test       # 176 pruebas de componentes y utilidades
 ```
 
 ## Estructura
@@ -80,15 +83,16 @@ inventario-equipos-bluebay/
 │   │   ├── app.ts                 Aplicación Express (rutas y manejo de errores)
 │   │   ├── servidor.ts            Arranque del servidor
 │   │   ├── lib/                   Cliente de Prisma, errores, validación, fechas
-│   │   └── modulos/               Inventario, empleados, departamentos, asignaciones, mantenimientos, bajas y reportes
+│   │   └── modulos/               Autenticación, usuarios, inventario, empleados, departamentos, asignaciones, mantenimientos, bajas y reportes
+│   ├── scripts/crear-admin.ts     npm run usuario:admin (crear o recuperar un administrador)
 │   └── tests/                     Pruebas del esquema y de la API
 ├── frontend/
 │   ├── src/
 │   │   ├── api/                   Cliente HTTP y funciones por módulo
 │   │   ├── componentes/           BarraLateral, Encabezado, FormularioEquipo…
-│   │   ├── composables/           Búsqueda de equipos, avisos flotantes y avisos de mantenimiento
+│   │   ├── composables/           Sesión, búsqueda de equipos, avisos flotantes y avisos de mantenimiento
 │   │   ├── utilidades/            Formato, validación y calendario
-│   │   ├── vistas/                Inicio, Inventario, Ficha, Empleados, Mantenimiento, Bajas…
+│   │   ├── vistas/                Inicio de sesión, Inicio, Inventario, Ficha, Empleados, Mantenimiento, Bajas, Usuarios…
 │   │   └── estilos/base.css       Tokens del diseño aprobado
 │   └── tests/
 └── docs/
@@ -96,6 +100,15 @@ inventario-equipos-bluebay/
     ├── diagrama-er.mermaid        Diagrama entidad-relación
     └── api.md                     Referencia de la API
 ```
+
+## Usuarios y acceso
+
+- **Dos roles.** *Técnico*: inventario, empleados, asignaciones, mantenimiento y bajas. *Administrador*: todo lo anterior y además la sección **Usuarios** (crear, editar, restablecer contraseña, desactivar).
+- **El primer administrador** se crea en la consola con `npm run usuario:admin` (dentro de `backend`). El mismo comando sirve para **recuperar el acceso** si se olvida la contraseña del administrador: al escribir un usuario que ya existe, le pone la contraseña nueva, lo activa, le quita el bloqueo y lo deja como administrador.
+- **La sesión dura hasta cerrar el navegador.** Además, el servidor la cierra si pasan 12 horas sin usarla (algunos navegadores "reviven" la sesión al restaurar pestañas).
+- **Bloqueo por intentos fallidos.** Tras 5 contraseñas incorrectas seguidas el usuario queda bloqueado 15 minutos; un administrador puede desbloquearlo antes restableciéndole la contraseña.
+- **Las contraseñas no se guardan:** solo su hash bcrypt. Mínimo 8 caracteres. Al cambiar la contraseña propia se cierran las sesiones abiertas en otras computadoras.
+- **Los usuarios no se borran, se desactivan.** Al desactivar a alguien se cierran sus sesiones de inmediato. Un administrador no puede desactivarse ni quitarse el rol a sí mismo, así que siempre queda al menos uno.
 
 ## Decisiones de diseño
 

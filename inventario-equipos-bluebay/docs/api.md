@@ -2,6 +2,8 @@
 
 Base: `/api`. Todas las respuestas son JSON. Implementada con Express 5 y validación con zod.
 
+**Todas las rutas exigen haber iniciado sesión** (cookie `inventario.sid`), salvo `GET /salud` y `POST /auth/iniciar-sesion`. Sin sesión responden 401 `NO_AUTENTICADO`. La sección `/usuarios` es solo para administradores (403 `SIN_PERMISO` para técnicos).
+
 ## Formato de errores
 
 ```json
@@ -12,6 +14,12 @@ Base: `/api`. Todas las respuestas son JSON. Implementada con Express 5 y valida
 |---|---|---|
 | 400 | DATOS_INVALIDOS | Un campo falta o no cumple una regla; `campos` trae un mensaje por campo |
 | 400 | JSON_INVALIDO | El cuerpo de la petición no es JSON válido |
+| 401 | NO_AUTENTICADO | No hay sesión, venció o el usuario fue desactivado |
+| 401 | CREDENCIALES_INVALIDAS | Usuario o contraseña incorrectos (el mismo mensaje en ambos casos) |
+| 403 | USUARIO_INACTIVO | Contraseña correcta, pero el usuario está desactivado |
+| 403 | SIN_PERMISO | Un técnico intentó usar una función de administrador |
+| 409 | ACCION_SOBRE_SI_MISMO | Un administrador intentó desactivarse, cambiarse el rol o restablecerse la contraseña desde Usuarios |
+| 429 | USUARIO_BLOQUEADO | Demasiados intentos fallidos; el mensaje dice cuántos minutos faltan |
 | 404 | NO_ENCONTRADO / RUTA_NO_ENCONTRADA | El registro o la ruta no existen |
 | 409 | NUMERO_SERIE_DUPLICADO / DUPLICADO | Ya existe un registro con ese valor único |
 | 409 | EQUIPO_DADO_DE_BAJA | Se intentó modificar un equipo dado de baja |
@@ -28,6 +36,33 @@ Base: `/api`. Todas las respuestas son JSON. Implementada con Express 5 y valida
 | 409 | EQUIPOS_CAMBIARON | Un equipo cambió (lo asignaron o lo dieron de baja) mientras se registraba la baja; no se hizo nada |
 | 409 | BAJA_PERMANENTE | Se intentó borrar un acta de baja |
 | 500 | ERROR_INTERNO | Error inesperado (se registra en la consola del servidor) |
+
+## Inicio de sesión (parte 6)
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| POST | `/auth/iniciar-sesion` | `{ usuario, contrasena }`. El usuario no distingue mayúsculas ni espacios alrededor; la contraseña sí. Responde `{ usuario: { id, usuario, nombre, rol } }` y la cookie de sesión (HttpOnly, SameSite=Lax, sin fecha de vencimiento: se borra al cerrar el navegador). Cambia el id de sesión en cada inicio. |
+| POST | `/auth/cerrar-sesion` | Borra la sesión de la base y la cookie. Responde 204 (también si no había sesión). |
+| GET | `/auth/sesion` | Usuario con la sesión abierta (el frontend lo consulta al abrir el sistema). |
+| POST | `/auth/cambiar-contrasena` | `{ contrasenaActual, contrasenaNueva }`. Cierra las demás sesiones del usuario y conserva la actual. Responde 204. |
+
+### Reglas de acceso
+
+- 5 contraseñas incorrectas seguidas bloquean al usuario 15 minutos (aunque luego escriba bien la contraseña). Un inicio de sesión correcto reinicia el contador; vencido el bloqueo, se cuenta desde cero.
+- La sesión vence en el servidor tras 12 horas sin usarse. Se guarda en la tabla `sesiones`, así que reiniciar la API no saca a nadie (si `SESION_SECRETO` no cambia).
+- El usuario se vuelve a leer en cada petición: si lo desactivan o le cambian el rol, aplica de inmediato.
+- Contraseña nueva: mínimo 8 caracteres, no solo espacios, máximo 72 bytes (límite de bcrypt).
+
+## Usuarios (parte 6, solo administradores)
+
+Cada usuario trae `id`, `usuario`, `nombre`, `rol` (`ADMIN` o `TECNICO`), `activo`, `bloqueado`, `bloqueadoHasta`, `ultimoAcceso` y `creadoEn`. Nunca se devuelve el hash de la contraseña.
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET | `/usuarios` | Activos primero y luego por nombre. |
+| POST | `/usuarios` | Alta: `usuario` (3 a 40 minúsculas sin acentos, números, `.`, `-` o `_`; se recorta y pasa a minúsculas), `nombre`, `rol` y `contrasena`. Responde 201. |
+| PATCH | `/usuarios/:id` | Edición parcial de `nombre`, `rol` y `activo`. Al desactivar se cierran sus sesiones. Un administrador no puede desactivarse ni cambiarse el rol a sí mismo. |
+| POST | `/usuarios/:id/restablecer-contrasena` | `{ contrasena }`. Quita el bloqueo y cierra sus sesiones. No se usa para la propia (para eso está `/auth/cambiar-contrasena`). |
 
 ## Inventario (parte 2)
 

@@ -21,6 +21,7 @@ Versión del esquema: 1 (parte 1 del prototipo). Gestor: MariaDB. ORM: Prisma 7.
 | equipos → mantenimientos | Un equipo tiene muchos mantenimientos | RESTRICT |
 | bajas → equipos | Un acta de baja agrupa equipos; cada equipo tiene como máximo un acta | RESTRICT (y las actas no se borran) |
 | bajas → bajas_articulos | Un acta tiene cero o más artículos sin número de serie | RESTRICT (y los renglones no se borran) |
+| usuarios → sesiones | Un usuario puede tener varias sesiones abiertas (una por computadora o navegador) | CASCADE: al borrar un usuario se borran sus sesiones |
 
 `asignaciones` resuelve la relación muchos a muchos entre equipos y empleados a lo largo del tiempo y conserva el historial completo.
 
@@ -140,6 +141,35 @@ Renglón del acta para algo que no está en el inventario (baterías de UPS, tó
 | aniosUso | INT | Sí | — | — | Años de uso, de 0 a 100 (0 = menos de un año) |
 | observaciones | VARCHAR(255) | No | — | — | Motivo de la baja y condiciones |
 
+## Tabla `usuarios`
+
+Personas del Departamento de Sistemas que entran al sistema. No se borran: se desactivan.
+
+| Campo | Tipo | Nulo | Llave | Por defecto | Descripción |
+|---|---|---|---|---|---|
+| id | INT | No | PK | autoincremental | Identificador del usuario |
+| usuario | VARCHAR(40) | No | Única | — | Nombre para iniciar sesión: de 3 a 40 minúsculas sin acentos, números, punto, guion o guion bajo |
+| nombre | VARCHAR(100) | No | — | — | Nombre completo que se muestra en pantalla |
+| contrasenaHash | VARCHAR(100) | No | — | — | Hash bcrypt de la contraseña (la contraseña nunca se guarda) |
+| rol | ENUM | No | — | TECNICO | ADMIN (incluye gestión de usuarios) o TECNICO |
+| activo | BOOLEAN | No | — | verdadero | Falso cuando ya no debe entrar; se conserva el registro |
+| intentosFallidos | INT | No | — | 0 | Contraseñas incorrectas seguidas; al llegar a 5 se bloquea |
+| bloqueadoHasta | DATETIME(3) | Sí | — | — | Hasta cuándo dura el bloqueo por intentos fallidos |
+| ultimoAcceso | DATETIME(3) | Sí | — | — | Fecha y hora del último inicio de sesión correcto |
+| creadoEn | DATETIME(3) | No | — | fecha y hora actual | Fecha y hora de registro |
+| actualizadoEn | DATETIME(3) | No | — | — | Fecha y hora de la última modificación |
+
+## Tabla `sesiones`
+
+Sesiones abiertas del sistema (las administra express-session). Guardarlas en la base permite reiniciar la API sin sacar a nadie y cerrar las sesiones de un usuario al desactivarlo o cambiarle la contraseña. No tiene `creadoEn` ni `actualizadoEn`: su vigencia la marca `expiraEn`.
+
+| Campo | Tipo | Nulo | Llave | Por defecto | Descripción |
+|---|---|---|---|---|---|
+| id | VARCHAR(128) ascii_bin | No | PK | — | Identificador aleatorio que viaja firmado en la cookie; distingue mayúsculas |
+| usuarioId | INT | Sí | FK → usuarios.id | — | Usuario dueño de la sesión |
+| datos | TEXT | No | — | — | Contenido de la sesión en JSON |
+| expiraEn | DATETIME(3) | No | — | — | Vence 12 horas después del último uso; las vencidas se borran cada hora |
+
 ## Índices
 
 | Índice | Tabla | Columnas | Propósito |
@@ -157,6 +187,9 @@ Renglón del acta para algo que no está en el inventario (baterías de UPS, tó
 | equipos_bajaId_idx | equipos | bajaId | Equipos de un acta de baja |
 | bajas_folio_key | bajas | folio | Único; un folio por acta |
 | bajas_fechaBaja_idx | bajas | fechaBaja | Listar las bajas de la más reciente a la más antigua |
+| usuarios_usuario_key | usuarios | usuario | Único; buscar al usuario al iniciar sesión |
+| sesiones_expiraEn_idx | sesiones | expiraEn | Borrar rápido las sesiones vencidas |
+| sesiones_usuarioId_idx | sesiones | usuarioId | Cerrar todas las sesiones de un usuario |
 | bajas_articulos_bajaId_idx | bajas_articulos | bajaId | Artículos de un acta |
 
 ## Restricciones de verificación (CHECK)
@@ -187,6 +220,8 @@ Renglón del acta para algo que no está en el inventario (baterías de UPS, tó
 | chk_bajas_articulos_cantidad_positiva | bajas_articulos | La cantidad es mayor que cero |
 | chk_bajas_articulos_costo_no_negativo | bajas_articulos | El costo es nulo o mayor o igual a cero |
 | chk_bajas_articulos_anios_validos | bajas_articulos | Los años de uso son nulos o están entre 0 y 100 |
+| chk_usuarios_usuario | usuarios | El usuario tiene de 3 a 40 minúsculas sin acentos, números, punto, guion o guion bajo |
+| chk_usuarios_intentos | usuarios | Los intentos fallidos no pueden ser negativos |
 
 ## Disparadores (triggers)
 

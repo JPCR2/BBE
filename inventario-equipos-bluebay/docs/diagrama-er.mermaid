@@ -8,6 +8,7 @@ erDiagram
     EQUIPO ||--o{ MANTENIMIENTO : "recibe"
     BAJA |o--o{ EQUIPO : "da de baja"
     BAJA ||--o{ BAJA_ARTICULO : "incluye"
+    USUARIO ||--o{ SESION : "abre"
 
     DEPARTAMENTO {
         int id PK
@@ -87,4 +88,25 @@ erDiagram
         decimal costo "opcional, total del renglón"
         int aniosUso "opcional, 0 a 100"
         varchar observaciones "motivo y condiciones"
+    }
+
+    USUARIO {
+        int id PK
+        varchar usuario UK "minúsculas, para iniciar sesión"
+        varchar nombre
+        varchar contrasenaHash "bcrypt"
+        enum rol "ADMIN o TECNICO"
+        boolean activo
+        int intentosFallidos
+        datetime bloqueadoHasta "opcional"
+        datetime ultimoAcceso "opcional"
+        datetime creadoEn
+        datetime actualizadoEn
+    }
+
+    SESION {
+        varchar id PK "aleatorio, va en la cookie"
+        int usuarioId FK
+        text datos "JSON"
+        datetime expiraEn
     }
