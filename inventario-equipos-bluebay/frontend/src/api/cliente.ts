@@ -11,6 +11,15 @@ export class ErrorApi extends Error {
   }
 }
 
+/**
+ * Se llama cuando la API responde 401 a mitad del trabajo (la sesión venció o
+ * desactivaron al usuario). El router lo usa para mandar a la pantalla de inicio de sesión.
+ */
+let alPerderSesion: (() => void) | undefined;
+export function cuandoSePierdaLaSesion(funcion: () => void) {
+  alPerderSesion = funcion;
+}
+
 type Consulta = Record<string, string | number | undefined | null>;
 
 interface OpcionesPeticion {
@@ -45,6 +54,8 @@ export async function pedir<T>(ruta: string, opciones: OpcionesPeticion = {}): P
   const datos = await respuesta.json().catch(() => null);
   if (!respuesta.ok) {
     const error = datos?.error;
+    // El 401 del propio inicio de sesión es "contraseña incorrecta", no una sesión perdida.
+    if (respuesta.status === 401 && !ruta.startsWith("/auth/")) alPerderSesion?.();
     throw new ErrorApi(
       respuesta.status,
       error?.codigo ?? "ERROR",

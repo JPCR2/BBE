@@ -2,21 +2,25 @@
 import { computed } from "vue";
 import { useRoute } from "vue-router";
 import logoBlueBay from "../activos/logo-blue-bay.png";
+import { esAdmin } from "../composables/useSesion";
 import Icono, { type NombreIcono } from "./Icono.vue";
 
-interface Seccion { nombre: string; ruta: string; icono: NombreIcono; disponible: boolean }
+interface Seccion { nombre: string; ruta: string; icono: NombreIcono; disponible: boolean; soloAdmin?: boolean }
 
-const secciones: Seccion[] = [
+const todas: Seccion[] = [
   { nombre: "Inicio", ruta: "/", icono: "inicio", disponible: true },
   { nombre: "Inventario", ruta: "/inventario", icono: "inventario", disponible: true },
   { nombre: "Empleados", ruta: "/empleados", icono: "empleados", disponible: true },
   { nombre: "Mantenimiento", ruta: "/mantenimiento", icono: "calendario", disponible: true },
   { nombre: "Bajas", ruta: "/bajas", icono: "bajas", disponible: true },
+  { nombre: "Usuarios", ruta: "/usuarios", icono: "llave", disponible: true, soloAdmin: true },
 ];
+// Los técnicos no ven la sección de usuarios.
+const secciones = computed(() => todas.filter((s) => !s.soloAdmin || esAdmin.value));
 
 const ruta = useRoute();
 const actual = computed(() => {
-  const coincidencias = secciones.filter((s) => (s.ruta === "/" ? ruta.path === "/" : ruta.path.startsWith(s.ruta)));
+  const coincidencias = secciones.value.filter((s) => (s.ruta === "/" ? ruta.path === "/" : ruta.path.startsWith(s.ruta)));
   return coincidencias[0]?.ruta;
 });
 </script>

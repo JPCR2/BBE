@@ -1,20 +1,28 @@
 <script setup lang="ts">
+import { useRoute } from "vue-router";
 import AvisosFlotantes from "./componentes/AvisosFlotantes.vue";
 import BarraLateral from "./componentes/BarraLateral.vue";
 import Encabezado from "./componentes/Encabezado.vue";
+import { sesion } from "./composables/useSesion";
+
+const ruta = useRoute();
 </script>
 
 <template>
-  <a href="#contenido" class="saltar">Saltar al contenido</a>
-  <div class="marco">
-    <BarraLateral />
-    <div class="columna">
-      <Encabezado />
-      <main id="contenido" class="pagina" tabindex="-1">
-        <RouterView />
-      </main>
+  <!-- Pantalla de inicio de sesión: sin barra lateral ni encabezado. -->
+  <RouterView v-if="ruta.meta.publica" />
+  <template v-else-if="sesion.usuario">
+    <a href="#contenido" class="saltar">Saltar al contenido</a>
+    <div class="marco">
+      <BarraLateral />
+      <div class="columna">
+        <Encabezado />
+        <main id="contenido" class="pagina" tabindex="-1">
+          <RouterView />
+        </main>
+      </div>
     </div>
-  </div>
+  </template>
   <AvisosFlotantes />
 </template>
 

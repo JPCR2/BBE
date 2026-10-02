@@ -39,6 +39,8 @@ export function crearRouterDePrueba() {
       { path: "/mantenimiento", name: "mantenimiento", component: Vacia },
       { path: "/bajas", name: "bajas", component: Vacia },
       { path: "/bajas/nueva", name: "nueva-baja", component: Vacia },
+      { path: "/usuarios", name: "usuarios", component: Vacia },
+      { path: "/iniciar-sesion", name: "iniciar-sesion", component: Vacia },
     ],
   });
 }
@@ -58,3 +60,11 @@ export const mantenimientoDemo = (id: number, fecha: string, cambios: Record<str
   equipo: { id: 1, numeroSerie: "DEMO-SN-0001", tipo: "LAPTOP", marca: "Dell", modelo: "Latitude 5440", ubicacion: "Recepción", estado: "ACTIVO" },
   ...cambios,
 });
+
+/** Respuesta JSON de error con el formato de la API. */
+export const errorApi = (estado: number, codigo: string, mensaje: string, campos?: Record<string, string>) => ({
+  estado, cuerpo: { error: { codigo, mensaje, ...(campos ? { campos } : {}) } },
+});
+
+export const adminDemo = { id: 1, usuario: "jpolanco", nombre: "Joel Polanco Cruz", rol: "ADMIN" as const };
+export const tecnicoDemo = { id: 2, usuario: "alopez", nombre: "Ana López", rol: "TECNICO" as const };

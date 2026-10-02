@@ -6,6 +6,7 @@ import { useAvisosMantenimiento } from "../composables/useAvisosMantenimiento";
 import { useBusquedaEquipos } from "../composables/useBusquedaEquipos";
 import { ETIQUETAS_ESTADO, VARIANTE_ESTADO, fechaDeHoyLarga } from "../utilidades/formato";
 import Icono from "./Icono.vue";
+import MenuUsuario from "./MenuUsuario.vue";
 
 const router = useRouter();
 const { texto, resultados, cargando, error, sinResultados, resolverExacto } = useBusquedaEquipos(5);
@@ -106,6 +107,7 @@ async function alPresionarEnter() {
       <Icono nombre="campana" :tamano="22" />
       <span v-if="pendientes > 0" class="contador" aria-hidden="true">{{ pendientes > 99 ? "99+" : pendientes }}</span>
     </RouterLink>
+    <MenuUsuario />
   </header>
 </template>
 

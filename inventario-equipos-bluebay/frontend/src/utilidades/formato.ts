@@ -40,6 +40,14 @@ export function fechaCorta(valor: string | null | undefined): string {
   );
 }
 
+/** Fecha ISO con hora → "02/10/2026, 10:15" (hora de Playa del Carmen). */
+export function fechaHora(valor: string | null | undefined): string {
+  if (!valor) return "—";
+  return new Intl.DateTimeFormat("es-MX", {
+    timeZone: ZONA_HOTEL, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(new Date(valor));
+}
+
 /** Fecha de hoy para el encabezado: "Viernes 18 de septiembre de 2026". */
 export function fechaDeHoyLarga(ahora: Date = new Date()): string {
   const texto = new Intl.DateTimeFormat("es-MX", {
