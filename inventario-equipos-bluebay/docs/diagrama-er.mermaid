@@ -1,0 +1,90 @@
+%% Diagrama entidad-relación — Sistema de Gestión de Inventario y Mantenimiento
+%% de Equipos de Cómputo, Blue Bay Grand Esmeralda (parte 1 del prototipo).
+%% Se puede visualizar en https://mermaid.live o con la extensión de Mermaid de VS Code.
+erDiagram
+    DEPARTAMENTO ||--o{ EMPLEADO : "agrupa"
+    EMPLEADO ||--o{ ASIGNACION : "recibe"
+    EQUIPO ||--o{ ASIGNACION : "se asigna en"
+    EQUIPO ||--o{ MANTENIMIENTO : "recibe"
+    BAJA |o--o{ EQUIPO : "da de baja"
+    BAJA ||--o{ BAJA_ARTICULO : "incluye"
+
+    DEPARTAMENTO {
+        int id PK
+        varchar nombre UK
+        datetime creadoEn
+        datetime actualizadoEn
+    }
+
+    EMPLEADO {
+        int id PK
+        varchar numeroEmpleado UK
+        varchar nombre
+        varchar apellidos
+        varchar puesto
+        int departamentoId FK
+        boolean activo
+        datetime creadoEn
+        datetime actualizadoEn
+    }
+
+    EQUIPO {
+        int id PK
+        varchar numeroSerie UK
+        enum tipo "ESCRITORIO, LAPTOP, ALL_IN_ONE, MONITOR, IMPRESORA, OTRO"
+        varchar marca
+        varchar modelo
+        text especificaciones "opcional"
+        varchar ubicacion "opcional"
+        enum estado "ACTIVO, EN_MANTENIMIENTO, BAJA"
+        date fechaAdquisicion "opcional"
+        decimal costo "opcional, MXN"
+        varchar folioFactura "obligatorio en altas nuevas"
+        date fechaVencimientoGarantia "obligatoria en altas nuevas"
+        int bajaId FK "solo si estado = BAJA"
+        varchar observacionBaja "motivo; solo con acta"
+        datetime creadoEn
+        datetime actualizadoEn
+    }
+
+    ASIGNACION {
+        int id PK
+        int equipoId FK
+        int empleadoId FK
+        datetime fechaAsignacion
+        datetime fechaDevolucion "vacía = vigente"
+        varchar observaciones "opcional"
+        datetime creadoEn
+        datetime actualizadoEn
+    }
+
+    MANTENIMIENTO {
+        int id PK
+        int equipoId FK
+        enum tipo "PREVENTIVO, CORRECTIVO"
+        enum estado "PROGRAMADO, REALIZADO, CANCELADO"
+        date fechaProgramada "obligatoria si PROGRAMADO"
+        date fechaRealizacion "obligatoria si REALIZADO"
+        text descripcion
+        varchar responsable "opcional"
+        datetime creadoEn
+        datetime actualizadoEn
+    }
+
+    BAJA {
+        int id PK
+        varchar folio UK "BAJA-AAAA-0001"
+        date fechaBaja
+        varchar elaboro "quién capturó"
+        datetime creadoEn
+    }
+
+    BAJA_ARTICULO {
+        int id PK
+        int bajaId FK
+        varchar descripcion
+        int cantidad "mayor que cero"
+        decimal costo "opcional, total del renglón"
+        int aniosUso "opcional, 0 a 100"
+        varchar observaciones "motivo y condiciones"
+    }

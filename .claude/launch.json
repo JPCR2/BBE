@@ -1,0 +1,4 @@
+{ "version": "0.0.1", "configurations": [
+  { "name": "frontend", "runtimeExecutable": "npm", "runtimeArgs": ["--prefix", "inventario-equipos-bluebay/frontend", "run", "dev"], "port": 5173 },
+  { "name": "backend", "runtimeExecutable": "npm", "runtimeArgs": ["--prefix", "inventario-equipos-bluebay/backend", "run", "dev"], "port": 3000, "url": "http://127.0.0.1:3000" }
+] }

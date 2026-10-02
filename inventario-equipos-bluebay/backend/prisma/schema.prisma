@@ -1,0 +1,223 @@
+// =============================================================================
+// Sistema de Gestión de Inventario y Mantenimiento de Equipos de Cómputo
+// Blue Bay Grand Esmeralda — Departamento de Sistemas
+//
+// Parte 1 del prototipo: esquema de base de datos.
+// Convenciones:
+//   - Modelos en español y en singular (Equipo, Empleado...).
+//   - Tablas en plural (@@map): equipos, empleados, asignaciones...
+//   - Columnas con el mismo nombre que el campo del código (camelCase).
+//   - Sin acentos ni ñ en identificadores.
+//   - Las reglas que Prisma no puede expresar (CHECK y trigger) viven en la
+//     migración "reglas_integridad".
+// =============================================================================
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql" // MariaDB usa el proveedor "mysql" de Prisma
+}
+
+// -----------------------------------------------------------------------------
+// Catálogos
+// -----------------------------------------------------------------------------
+
+/// Tipos de equipo de cómputo que se inventarían.
+enum TipoEquipo {
+  ESCRITORIO
+  LAPTOP
+  ALL_IN_ONE
+  MONITOR
+  IMPRESORA
+  OTRO
+}
+
+/// Estado operativo del equipo. La BAJA es lógica: el registro nunca se borra.
+/// Si está asignado o disponible NO se guarda aquí: se deduce de Asignacion.
+enum EstadoEquipo {
+  ACTIVO
+  EN_MANTENIMIENTO
+  BAJA
+}
+
+enum TipoMantenimiento {
+  PREVENTIVO
+  CORRECTIVO
+}
+
+/// "Próximo" y "vencido" no son estados: se calculan con fechaProgramada.
+enum EstadoMantenimiento {
+  PROGRAMADO
+  REALIZADO
+  CANCELADO
+}
+
+/// Catálogo de departamentos del hotel.
+/// La intercalación utf8mb4_unicode_ci hace que "Recepción" y "RECEPCION"
+/// cuenten como el mismo nombre, por lo que no se pueden duplicar.
+model Departamento {
+  id            Int      @id @default(autoincrement())
+  nombre        String   @unique @db.VarChar(100)
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  empleados Empleado[]
+
+  @@map("departamentos")
+}
+
+// -----------------------------------------------------------------------------
+// Entidades principales
+// -----------------------------------------------------------------------------
+
+/// Personal del hotel al que se le pueden asignar equipos.
+/// Un empleado que deja el hotel se desactiva (activo = false), no se borra,
+/// para conservar su historial de asignaciones.
+model Empleado {
+  id             Int      @id @default(autoincrement())
+  numeroEmpleado String   @unique @db.VarChar(20)
+  nombre         String   @db.VarChar(80)
+  apellidos      String   @db.VarChar(100)
+  puesto         String   @db.VarChar(100)
+  departamentoId Int
+  activo         Boolean  @default(true)
+  creadoEn       DateTime @default(now())
+  actualizadoEn  DateTime @updatedAt
+
+  departamento Departamento @relation(fields: [departamentoId], references: [id], onDelete: Restrict)
+  asignaciones Asignacion[]
+
+  @@index([departamentoId])
+  @@map("empleados")
+}
+
+/// Cada registro es UNA unidad física, identificada por su número de serie.
+model Equipo {
+  id                       Int          @id @default(autoincrement())
+  /// Se normaliza antes de guardar (sin espacios, en mayúsculas). Ver src/lib/prisma.ts
+  numeroSerie              String       @unique @db.VarChar(100)
+  tipo                     TipoEquipo
+  marca                    String       @db.VarChar(80)
+  modelo                   String       @db.VarChar(100)
+  especificaciones         String?      @db.Text
+  /// Área física donde se encuentra el equipo.
+  ubicacion                String?      @db.VarChar(150)
+  estado                   EstadoEquipo @default(ACTIVO)
+  /// Base para calcular el "tiempo de funcionamiento" del reporte de baja.
+  fechaAdquisicion         DateTime?    @db.Date
+  /// Costo del equipo en MXN (aparece en el reporte de baja).
+  costo                    Decimal?     @db.Decimal(10, 2)
+  /// Folio de la factura de compra (va en el reporte de alta).
+  /// Obligatorio en altas nuevas; opcional en equipos anteriores al sistema.
+  folioFactura             String?      @db.VarChar(50)
+  /// Fecha en que vence la garantía del fabricante o proveedor.
+  fechaVencimientoGarantia DateTime?    @db.Date
+  /// Acta con la que se dio de baja. Solo la tienen los equipos en estado BAJA.
+  bajaId                   Int?
+  /// Motivo de la baja y condiciones del equipo (columna "Observaciones" del acta).
+  observacionBaja          String?      @db.VarChar(255)
+  creadoEn                 DateTime     @default(now())
+  actualizadoEn            DateTime     @updatedAt
+
+  baja           Baja?           @relation(fields: [bajaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  asignaciones   Asignacion[]
+  mantenimientos Mantenimiento[]
+
+  @@index([estado])
+  @@index([bajaId])
+  // Para reunir en un reporte de alta todos los equipos de una misma factura.
+  @@index([folioFactura])
+  @@map("equipos")
+}
+
+/// Historial de asignaciones equipo ↔ empleado.
+/// fechaDevolucion vacía = asignación vigente. Un equipo solo puede tener UNA
+/// asignación vigente a la vez (lo garantiza un trigger de MariaDB).
+model Asignacion {
+  id                      Int       @id @default(autoincrement())
+  equipoId                Int
+  empleadoId              Int
+  fechaAsignacion         DateTime  @default(now())
+  fechaDevolucion         DateTime?
+  /// Notas al entregar el equipo.
+  observaciones           String?   @db.VarChar(255)
+  /// Notas al recibirlo de vuelta (estado en que regresó, accesorios…).
+  observacionesDevolucion String?   @db.VarChar(255)
+  creadoEn                DateTime  @default(now())
+  actualizadoEn           DateTime  @updatedAt
+
+  equipo   Equipo   @relation(fields: [equipoId], references: [id], onDelete: Restrict)
+  empleado Empleado @relation(fields: [empleadoId], references: [id], onDelete: Restrict)
+
+  // Sirve para encontrar rápido la asignación vigente de un equipo.
+  @@index([equipoId, fechaDevolucion])
+  @@index([empleadoId])
+  @@map("asignaciones")
+}
+
+/// Historial y calendario de mantenimiento en una sola tabla.
+model Mantenimiento {
+  id               Int                 @id @default(autoincrement())
+  equipoId         Int
+  tipo             TipoMantenimiento
+  estado           EstadoMantenimiento @default(PROGRAMADO)
+  /// Obligatoria cuando el estado es PROGRAMADO.
+  fechaProgramada  DateTime?           @db.Date
+  /// Obligatoria cuando el estado es REALIZADO.
+  fechaRealizacion DateTime?           @db.Date
+  descripcion      String              @db.Text
+  /// Quién lo realizó. Cuando exista el login podrá ligarse al usuario.
+  responsable      String?             @db.VarChar(100)
+  creadoEn         DateTime            @default(now())
+  actualizadoEn    DateTime            @updatedAt
+
+  equipo Equipo @relation(fields: [equipoId], references: [id], onDelete: Restrict)
+
+  @@index([equipoId])
+  // Sirve para el calendario y las notificaciones (próximos / vencidos).
+  @@index([estado, fechaProgramada])
+  @@map("mantenimientos")
+}
+
+/// Acta de baja con el formato "Bajas de equipo operacional" del hotel.
+/// Incluye equipos del inventario (se agrupan por modelo al imprimir) y
+/// artículos sin número de serie (baterías, tóners…). Las firmas se hacen a
+/// mano en el papel. Nunca se borra ni se edita: es un documento firmado.
+model Baja {
+  id        Int      @id @default(autoincrement())
+  /// Consecutivo por año: BAJA-2026-0001. Lo asigna la API.
+  folio     String   @unique @db.VarChar(20)
+  fechaBaja DateTime @db.Date
+  /// Quién capturó la baja en el sistema (no sale en el papel).
+  elaboro   String   @db.VarChar(100)
+  creadoEn  DateTime @default(now())
+
+  equipos   Equipo[]
+  articulos BajaArticulo[]
+
+  @@index([fechaBaja])
+  @@map("bajas")
+}
+
+/// Renglón del acta para algo que no está en el inventario (sin número de
+/// serie): baterías de UPS, tóners, baterías de radio…
+model BajaArticulo {
+  id            Int      @id @default(autoincrement())
+  bajaId        Int
+  descripcion   String   @db.VarChar(150)
+  cantidad      Int
+  /// Costo total del renglón en MXN (no por unidad), como en el formato.
+  costo         Decimal? @db.Decimal(10, 2)
+  /// Años de uso; 0 = menos de un año.
+  aniosUso      Int?
+  /// Motivo de la baja y condiciones (columna "Observaciones").
+  observaciones String   @db.VarChar(255)
+
+  baja Baja @relation(fields: [bajaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([bajaId])
+  @@map("bajas_articulos")
+}
