@@ -7,7 +7,8 @@ import { CONTRASENA_PRUEBA, crearUsuario, db, iniciarSesionDePrueba, limpiarUsua
 const SECRETO = "secreto-de-pruebas";
 let ahora = new Date("2026-10-02T15:00:00Z");
 const relojAcceso = () => ahora;
-const app = crearApp({ db, relojAcceso, secretoSesion: SECRETO });
+// Estas pruebas inician sesión muchas veces desde la misma IP: el límite por IP se prueba aparte.
+const app = crearApp({ db, relojAcceso, secretoSesion: SECRETO, intentosPorIp: 10_000 });
 const api = () => request(app);
 
 const minutos = (n: number) => new Date(ahora.getTime() + n * 60_000);

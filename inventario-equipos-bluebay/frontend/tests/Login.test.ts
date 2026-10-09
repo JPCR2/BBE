@@ -141,3 +141,29 @@ describe("Pantalla de inicio de sesión", () => {
     envoltura.unmount();
   });
 });
+
+describe("Modo demostración", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("si se compila con VITE_MODO_DEMO=true, avisa que los datos son ficticios", async () => {
+    vi.stubEnv("VITE_MODO_DEMO", "true");
+    vi.resetModules();
+    const { default: Vista } = await import("../src/vistas/LoginVista.vue");
+    simularApi(() => ({ cuerpo: {} }));
+    const router = crearRouterDePrueba();
+    router.push("/iniciar-sesion");
+    await router.isReady();
+    const envoltura = mount(Vista, { global: { plugins: [router] } });
+    expect(envoltura.find(".aviso-demo").text()).toContain("Todos los datos son ficticios");
+    envoltura.unmount();
+  });
+
+  it("normalmente no muestra el aviso", async () => {
+    const { envoltura } = await montar();
+    expect(envoltura.find(".aviso-demo").exists()).toBe(false);
+    envoltura.unmount();
+  });
+});

@@ -6,6 +6,7 @@ import { iniciarSesion } from "../api/autenticacion";
 import { ErrorApi } from "../api/cliente";
 import Icono from "../componentes/Icono.vue";
 import { destinoSeguro, establecerUsuario } from "../composables/useSesion";
+import { modoDemo } from "../utilidades/modo";
 
 const ruta = useRoute();
 const router = useRouter();
@@ -74,6 +75,10 @@ async function entrar() {
           <h1 id="titulo-login">Iniciar sesión</h1>
           <p>Entra con el usuario que te dio el Departamento de Sistemas.</p>
         </div>
+
+        <p v-if="modoDemo" class="aviso-demo">
+          <strong>Versión de demostración.</strong> Todos los datos son ficticios; no contiene información real del hotel.
+        </p>
 
         <p v-if="error" class="aviso-error" role="alert">{{ error }}</p>
 
@@ -171,6 +176,7 @@ async function entrar() {
 .aviso-mayusculas { font-size: 13px; font-weight: 600; color: var(--alerta); }
 .entrar { width: 100%; min-height: 48px; font-size: 16px; }
 .ayuda { margin: 0; font-size: 13px; color: var(--texto-2); text-align: center; }
+.aviso-demo { margin: 0; padding: 10px 14px; border-radius: var(--radio); background: var(--alerta-fondo); color: var(--alerta); font-size: 14px; }
 
 @media (max-width: 800px) {
   .pantalla-login { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }

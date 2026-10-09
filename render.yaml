@@ -1,0 +1,36 @@
+# Despliegue de la DEMO en Render (plan gratis). Render lee este archivo al
+# crear un "Blueprint" desde el repositorio de GitHub.
+# Instrucciones completas: inventario-equipos-bluebay/README.md → "Publicar la demo".
+services:
+  - type: web
+    name: inventario-bluebay-demo
+    runtime: node
+    plan: free
+    rootDir: inventario-equipos-bluebay
+    # 1) Compila las pantallas (Vue) y 2) instala la API. --include=dev porque
+    # tsx, Prisma y Vite son dependencias de desarrollo y se usan al arrancar.
+    buildCommand: >-
+      npm --prefix frontend ci --include=dev &&
+      npm --prefix frontend run build &&
+      npm --prefix backend ci --include=dev
+    # Aplica migraciones pendientes (nunca borra datos) y enciende la API, que
+    # también sirve las pantallas compiladas.
+    startCommand: npm --prefix backend run start:produccion
+    healthCheckPath: /api/salud
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      # Muestra el aviso "Versión de demostración · datos ficticios".
+      - key: VITE_MODO_DEMO
+        value: "true"
+      # Render genera una clave al azar para firmar las cookies de sesión.
+      - key: SESION_SECRETO
+        generateValue: true
+      # Estas dos se pegan a mano en el panel de Render (vienen de Aiven):
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_CA
+        sync: false

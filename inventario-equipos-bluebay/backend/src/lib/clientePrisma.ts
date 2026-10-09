@@ -73,9 +73,28 @@ const extensionNormalizacion = Prisma.defineExtension({
 // Cliente
 // -----------------------------------------------------------------------------
 
-/** Crea un cliente de Prisma conectado a MariaDB mediante el adaptador oficial. */
-export function crearClientePrisma(urlBaseDeDatos: string) {
-  const adaptador = new PrismaMariaDb(urlBaseDeDatos);
+/**
+ * Convierte "mysql://usuario:clave@host:puerto/base" en la configuración del
+ * conector, agregando la conexión cifrada (TLS) con el certificado de la nube.
+ */
+export function configuracionConCertificado(urlBaseDeDatos: string, certificadoCa: string) {
+  const url = new URL(urlBaseDeDatos);
+  return {
+    host: url.hostname,
+    port: Number(url.port || 3306),
+    user: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    database: decodeURIComponent(url.pathname.replace(/^\//, "")),
+    // Variables de entorno de una sola línea: se aceptan los saltos escritos como "\n".
+    ssl: { ca: certificadoCa.replace(/\\n/g, "\n"), rejectUnauthorized: true },
+    prepareCacheLength: 0,
+  };
+}
+
+/** Crea un cliente de Prisma conectado a MariaDB/MySQL mediante el adaptador oficial. */
+export function crearClientePrisma(urlBaseDeDatos: string, opciones: { certificadoCa?: string } = {}) {
+  const certificadoCa = opciones.certificadoCa?.trim();
+  const adaptador = new PrismaMariaDb(certificadoCa ? configuracionConCertificado(urlBaseDeDatos, certificadoCa) : urlBaseDeDatos);
   return new PrismaClient({ adapter: adaptador }).$extends(extensionNormalizacion);
 }
 

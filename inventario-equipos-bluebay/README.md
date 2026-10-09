@@ -69,8 +69,8 @@ Vite reenvía las llamadas a `/api` hacia el backend, así que ambos deben estar
 ### 4. Pruebas
 
 ```bash
-cd backend && npm test        # 324 pruebas contra la base de datos real (base inventario_test)
-cd frontend && npm test       # 176 pruebas de componentes y utilidades
+cd backend && npm test        # 338 pruebas contra la base de datos real (base inventario_test)
+cd frontend && npm test       # 178 pruebas de componentes y utilidades
 ```
 
 ## Estructura
@@ -109,6 +109,42 @@ inventario-equipos-bluebay/
 - **Bloqueo por intentos fallidos.** Tras 5 contraseñas incorrectas seguidas el usuario queda bloqueado 15 minutos; un administrador puede desbloquearlo antes restableciéndole la contraseña.
 - **Las contraseñas no se guardan:** solo su hash bcrypt. Mínimo 8 caracteres. Al cambiar la contraseña propia se cierran las sesiones abiertas en otras computadoras.
 - **Los usuarios no se borran, se desactivan.** Al desactivar a alguien se cierran sus sesiones de inmediato. Un administrador no puede desactivarse ni quitarse el rol a sí mismo, así que siempre queda al menos uno.
+
+## Publicar la demo en internet (Render + Aiven, gratis)
+
+La demo vive en cuentas personales, **separada de todo lo del hotel**: no se conecta a su red ni a sus sistemas, y solo lleva **datos ficticios**. Ninguno de los dos servicios pide tarjeta, así que no puede haber cobros.
+
+| Pieza | Servicio | Plan |
+|---|---|---|
+| Pantallas + API (un solo sitio con HTTPS) | [Render](https://render.com) | Free: se "duerme" tras 15 min sin visitas; la primera carga tarda ~1 min |
+| Base de datos MySQL | [Aiven](https://aiven.io) | Free: 1 GB, conexión cifrada obligatoria |
+
+### 1. Base de datos en Aiven
+
+1. Crea la cuenta y un servicio **MySQL** con el plan **Free**.
+2. Copia `backend/.env.nube.example` como `backend/.env.nube` y pega ahí la **Service URI** (como `DATABASE_URL`, quitando `?ssl-mode=REQUIRED`) y el **CA certificate** (como `DATABASE_CA`).
+3. Desde la carpeta `backend`, en tu computadora:
+
+```bash
+npm run nube:migrar     # crea las tablas en Aiven (no borra nada)
+npm run nube:demo       # carga los datos ficticios DEMO
+npm run nube:admin      # crea tu usuario administrador de la demo
+```
+
+### 2. Sitio en Render
+
+1. Crea la cuenta (puedes entrar con GitHub) → **New → Blueprint** → elige el repositorio. Render lee `render.yaml`.
+2. Te pedirá dos valores: `DATABASE_URL` y `DATABASE_CA`, los mismos de `.env.nube`. `SESION_SECRETO` lo genera Render solo.
+3. Al terminar te da la dirección (`https://inventario-bluebay-demo.onrender.com` o parecida). Cada `git push` a `main` vuelve a publicar.
+
+### Qué cambia en internet (modo producción)
+
+- La misma API sirve las pantallas compiladas: un solo sitio, sin Vite.
+- La cookie de sesión solo viaja por HTTPS (`Secure`) y la API confía en la IP que manda el proxy de Render.
+- Encabezados de seguridad con `helmet` y límite de 30 intentos de inicio de sesión por IP cada 15 minutos (además del bloqueo por usuario).
+- Sin `SESION_SECRETO` la API no arranca.
+- Al arrancar aplica las migraciones pendientes con `prisma migrate deploy` (nunca `migrate dev`, que puede borrar datos).
+- La pantalla de inicio de sesión y la barra lateral avisan que es una **versión de demostración con datos ficticios**.
 
 ## Decisiones de diseño
 

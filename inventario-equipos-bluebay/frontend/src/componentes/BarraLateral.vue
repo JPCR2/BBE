@@ -3,6 +3,7 @@ import { computed } from "vue";
 import { useRoute } from "vue-router";
 import logoBlueBay from "../activos/logo-blue-bay.png";
 import { esAdmin } from "../composables/useSesion";
+import { modoDemo } from "../utilidades/modo";
 import Icono, { type NombreIcono } from "./Icono.vue";
 
 interface Seccion { nombre: string; ruta: string; icono: NombreIcono; disponible: boolean; soloAdmin?: boolean }
@@ -30,6 +31,7 @@ const actual = computed(() => {
     <RouterLink to="/" class="marca">
       <img :src="logoBlueBay" alt="Blue Bay Grand Esmeralda" class="logo" width="360" height="137">
       <span>Sistemas · Equipos de cómputo</span>
+      <span v-if="modoDemo" class="demo" title="Versión de demostración con datos ficticios">Demo · datos ficticios</span>
     </RouterLink>
     <ul class="secciones">
       <li v-for="seccion in secciones" :key="seccion.ruta">
@@ -63,6 +65,7 @@ const actual = computed(() => {
 }
 .logo { width: 100%; max-width: 196px; height: auto; }
 .marca span { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--lateral-tenue); }
+.marca .demo { align-self: flex-start; padding: 2px 8px; border-radius: 10px; background: var(--alerta-fondo); color: var(--alerta); letter-spacing: 0.04em; }
 .secciones { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .enlace {
   display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 12px;

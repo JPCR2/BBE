@@ -13,6 +13,7 @@ export default defineConfig({
   datasource: {
     url: env("DATABASE_URL"),
     // Base auxiliar que usa "prisma migrate dev" para detectar diferencias.
-    shadowDatabaseUrl: env("SHADOW_DATABASE_URL"),
+    // Es opcional: en el servidor de internet solo se usa "migrate deploy", que no la necesita.
+    shadowDatabaseUrl: process.env.SHADOW_DATABASE_URL,
   },
 });
