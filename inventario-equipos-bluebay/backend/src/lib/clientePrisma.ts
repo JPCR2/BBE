@@ -95,7 +95,13 @@ export function configuracionConCertificado(urlBaseDeDatos: string, certificadoC
 export function crearClientePrisma(urlBaseDeDatos: string, opciones: { certificadoCa?: string } = {}) {
   const certificadoCa = opciones.certificadoCa?.trim();
   const adaptador = new PrismaMariaDb(certificadoCa ? configuracionConCertificado(urlBaseDeDatos, certificadoCa) : urlBaseDeDatos);
-  return new PrismaClient({ adapter: adaptador }).$extends(extensionNormalizacion);
+  return new PrismaClient({
+    adapter: adaptador,
+    // Con la base en la nube cada consulta tarda ~200 ms. El límite de Prisma
+    // (5 s por transacción) se rebasaba al registrar varios datos juntos, y al
+    // cancelarse una consulta a medio camino podía quedar guardada sola.
+    transactionOptions: { maxWait: 10_000, timeout: 60_000 },
+  }).$extends(extensionNormalizacion);
 }
 
 export type ClientePrisma = ReturnType<typeof crearClientePrisma>;
