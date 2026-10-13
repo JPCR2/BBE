@@ -85,6 +85,21 @@ describe("Modo producción", () => {
   });
 });
 
+describe("Peticiones mal formadas", () => {
+  it("un cuerpo de más de 100 KB responde 413 (no 500)", async () => {
+    const res = await request(crearApp({ db })).post("/api/auth/iniciar-sesion").send({ usuario: "x", contrasena: "a".repeat(200_000) });
+    expect(res.status).toBe(413);
+    expect(res.body.error).toEqual({ codigo: "CUERPO_DEMASIADO_GRANDE", mensaje: "Los datos enviados son demasiado grandes (máximo 100 KB)." });
+  });
+
+  it("una codificación no admitida responde 415 (no 500)", async () => {
+    const res = await request(crearApp({ db })).post("/api/auth/iniciar-sesion")
+      .set("Content-Type", "application/json").set("Content-Encoding", "rara").send("{}");
+    expect(res.status).toBe(415);
+    expect(res.body.error.codigo).toBe("PETICION_INVALIDA");
+  });
+});
+
 describe("Reportes PDF", () => {
   it("no llevan CSP (para que el visor de PDF del navegador no quede en blanco), pero sí el resto de encabezados", async () => {
     const app = crearApp({ db, intentosPorIp: 100 });

@@ -69,7 +69,7 @@ Vite reenvía las llamadas a `/api` hacia el backend, así que ambos deben estar
 ### 4. Pruebas
 
 ```bash
-cd backend && npm test        # 338 pruebas contra la base de datos real (base inventario_test)
+cd backend && npm test        # 340 pruebas contra la base de datos real (base inventario_test)
 cd frontend && npm test       # 178 pruebas de componentes y utilidades
 ```
 

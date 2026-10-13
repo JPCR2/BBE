@@ -17,6 +17,7 @@
     "nube:migrar": "tsx --env-file=.env.nube scripts/migrar.ts",
     "nube:admin": "tsx --env-file=.env.nube scripts/crear-admin.ts",
     "nube:demo": "tsx --env-file=.env.nube prisma/seed.ts",
+    "nube:local": "tsx --env-file=.env.nube src/servidor.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
