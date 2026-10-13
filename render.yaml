@@ -6,6 +6,9 @@ services:
     name: inventario-bluebay-demo
     runtime: node
     plan: free
+    # La base de Aiven está en DigitalOcean, San Francisco: Oregon es la región
+    # de Render más cercana (~20 ms por consulta en lugar de ~200 ms).
+    region: oregon
     rootDir: inventario-equipos-bluebay
     # 1) Compila las pantallas (Vue) y 2) instala la API. --include=dev porque
     # tsx, Prisma y Vite son dependencias de desarrollo y se usan al arrancar.
