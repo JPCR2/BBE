@@ -24,6 +24,23 @@ declare module "vue-router" {
   }
 }
 
+/**
+ * A dónde se desplaza la página al navegar:
+ * - Atrás/Adelante del navegador: a donde estaba.
+ * - Misma pantalla y solo cambia la dirección (?dia=, ?busqueda=, ?pagina=): no se mueve.
+ *   Así, al elegir un día del calendario o un filtro, no regresa hasta arriba.
+ * - Otra pantalla: arriba.
+ */
+export function posicionAlNavegar(
+  destino: { path: string },
+  origen: { path: string },
+  guardada: { left: number; top: number } | null,
+) {
+  if (guardada) return guardada;
+  if (destino.path === origen.path) return false;
+  return { top: 0 };
+}
+
 export const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -40,7 +57,7 @@ export const router = createRouter({
     { path: "/iniciar-sesion", name: "iniciar-sesion", component: LoginVista, meta: { titulo: "Iniciar sesión", publica: true } },
     { path: "/:ruta(.*)*", name: "no-encontrada", component: NoEncontradaVista, meta: { titulo: "Página no encontrada" } },
   ],
-  scrollBehavior: () => ({ top: 0 }),
+  scrollBehavior: posicionAlNavegar,
 });
 
 export async function protegerRuta(destino: RouteLocationNormalized) {

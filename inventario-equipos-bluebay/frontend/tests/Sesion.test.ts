@@ -97,3 +97,17 @@ describe("Iniciales del usuario", () => {
     expect(inicialesDe("   ")).toBe("?");
   });
 });
+
+describe("Desplazamiento al navegar", () => {
+  it("al cambiar solo el día o un filtro en la misma pantalla, no regresa hasta arriba", async () => {
+    const { posicionAlNavegar } = await import("../src/router");
+    expect(posicionAlNavegar({ path: "/mantenimiento" }, { path: "/mantenimiento" }, null)).toBe(false);
+    expect(posicionAlNavegar({ path: "/inventario" }, { path: "/inventario" }, null)).toBe(false);
+  });
+
+  it("al ir a otra pantalla sube al inicio, y con Atrás regresa a donde estaba", async () => {
+    const { posicionAlNavegar } = await import("../src/router");
+    expect(posicionAlNavegar({ path: "/inventario/7" }, { path: "/inventario" }, null)).toEqual({ top: 0 });
+    expect(posicionAlNavegar({ path: "/inventario" }, { path: "/inventario/7" }, { left: 0, top: 640 })).toEqual({ left: 0, top: 640 });
+  });
+});
