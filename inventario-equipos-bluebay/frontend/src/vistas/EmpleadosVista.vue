@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { ErrorApi } from "../api/cliente";
 import {
@@ -98,6 +98,26 @@ function abrirAlta() {
   erroresServidor.value = {};
   panel.value = "alta";
   pestana.value = "empleados";
+  mostrarPanel();
+}
+
+function abrirEdicion() {
+  panel.value = "edicion";
+  mostrarPanel();
+}
+
+/**
+ * Al abrir el formulario: en pantallas angostas el panel queda debajo de la
+ * tabla, así que se desplaza hasta él (sin animación: la animación se
+ * cancelaba al cambiar el contenido) y deja el cursor en el primer campo.
+ */
+async function mostrarPanel() {
+  await nextTick();
+  const lateral = document.querySelector<HTMLElement>(".lateral");
+  if (!lateral) return;
+  const { top, bottom } = lateral.getBoundingClientRect();
+  if (top < 0 || bottom > window.innerHeight) lateral.scrollIntoView({ block: "start" });
+  lateral.querySelector<HTMLElement>("input, select")?.focus({ preventScroll: true });
 }
 
 const inicialFormulario = computed<Partial<DatosEmpleado>>(() =>
@@ -327,7 +347,7 @@ const empleadoParaDialogo = computed<Empleado | undefined>(() => seleccionado.va
           </div>
 
           <div class="bloque acciones-ficha">
-            <button type="button" class="boton-enlace" @click="panel = 'edicion'">Editar datos del empleado</button>
+            <button type="button" class="boton-enlace" @click="abrirEdicion">Editar datos del empleado</button>
             <template v-if="seleccionado.activo">
               <button
                 v-if="seleccionado.equiposVigentes.length === 0" type="button" class="boton-enlace peligro"
@@ -409,7 +429,7 @@ const empleadoParaDialogo = computed<Empleado | undefined>(() => seleccionado.va
 .tabla tr.elegida { background: var(--primario-tenue); }
 .tenue { color: var(--texto-2); }
 .inactivo { margin-left: 8px; }
-.lateral { width: 350px; flex-shrink: 0; }
+.lateral { width: 350px; flex-shrink: 0; scroll-margin-top: 88px; }
 .titulo-lateral { margin: 0 0 12px; font-size: 17px; font-weight: 700; }
 .ficha { display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
 .ficha h2 { margin: 0; font-size: 17px; font-weight: 700; }
@@ -427,7 +447,14 @@ const empleadoParaDialogo = computed<Empleado | undefined>(() => seleccionado.va
 .acciones-ficha { align-items: flex-start; gap: 4px; }
 .peligro { color: var(--peligro); }
 .deshabilitado { color: var(--texto-3); }
-@media (max-width: 1100px) {
+/* Pantallas medianas (p. ej. laptop a 1280 px o monitor con escala de 150 %):
+   panel más angosto y celdas más compactas para que quepan las 5 columnas. */
+@media (max-width: 1440px) {
+  .lateral { width: 320px; }
+  .tabla th, .tabla td { padding-left: 12px; padding-right: 12px; }
+}
+/* Si aun así no cabe todo lado a lado, el panel pasa debajo de la tabla. */
+@media (max-width: 1240px) {
   .columnas { flex-direction: column; align-items: stretch; }
   .lateral { width: 100%; }
 }

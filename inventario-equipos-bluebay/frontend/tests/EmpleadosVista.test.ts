@@ -91,6 +91,22 @@ describe("EmpleadosVista", () => {
     envoltura.unmount();
   });
 
+  it("al abrir el formulario (alta o edición) deja el cursor en el primer campo", async () => {
+    const { envoltura } = await montar();
+    await envoltura.findAll("button").find((b) => b.text().includes("Registrar empleado"))!.trigger("click");
+    await flushPromises();
+    expect(envoltura.find(".lateral h2").text()).toBe("Registrar empleado");
+    expect(document.activeElement?.id).toBe("numeroEmpleado");
+
+    await envoltura.findAll("button").find((b) => b.text() === "Cancelar")!.trigger("click");
+    (document.activeElement as HTMLElement | null)?.blur();
+    await envoltura.findAll("button").find((b) => b.text().includes("Editar datos del empleado"))!.trigger("click");
+    await flushPromises();
+    expect(envoltura.find(".lateral h2").text()).toBe("Editar empleado");
+    expect(document.activeElement?.id).toBe("numeroEmpleado");
+    envoltura.unmount();
+  });
+
   it("el formulario avisa de los campos obligatorios antes de llamar a la API", async () => {
     const { envoltura, llamadas } = await montar();
     const antes = llamadas.length;
