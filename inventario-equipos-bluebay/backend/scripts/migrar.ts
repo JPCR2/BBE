@@ -3,6 +3,9 @@
  * nuevo; nunca borra datos. Lo usa el servidor de internet al arrancar y
  * también se puede correr a mano:   npm run nube:migrar
  *
+ * Si la base no responde, lo reintenta varias veces (MIGRACION_INTENTOS,
+ * MIGRACION_ESPERA_SEGUNDOS) antes de fallar.
+ *
  * Si hay DATABASE_CA (certificado de Aiven), lo guarda en un archivo temporal
  * y le pide a Prisma una conexión cifrada que verifique ese certificado.
  */
@@ -30,9 +33,22 @@ if (certificado) {
   urlMigracion = conCertificado.toString();
 }
 
-const resultado = spawnSync("npx", ["prisma", "migrate", "deploy"], {
-  stdio: "inherit",
-  shell: process.platform === "win32",
-  env: { ...process.env, DATABASE_URL: urlMigracion },
-});
-process.exit(resultado.status ?? 1);
+// La base en la nube puede tardar en responder (Aiven la reinicia o la
+// "despierta" tras un rato sin uso): se reintenta antes de darse por vencido.
+const intentos = Number(process.env.MIGRACION_INTENTOS ?? 6);
+const esperaSegundos = Number(process.env.MIGRACION_ESPERA_SEGUNDOS ?? 15);
+
+for (let intento = 1; intento <= intentos; intento++) {
+  const resultado = spawnSync("npx", ["prisma", "migrate", "deploy"], {
+    stdio: "inherit",
+    shell: process.platform === "win32",
+    env: { ...process.env, DATABASE_URL: urlMigracion },
+  });
+  if (resultado.status === 0) process.exit(0);
+  if (intento < intentos) {
+    console.warn(`No se pudo aplicar las migraciones (intento ${intento} de ${intentos}). Reintentando en ${esperaSegundos} s…`);
+    await new Promise((resolver) => setTimeout(resolver, esperaSegundos * 1000));
+  }
+}
+console.error(`No se pudo conectar con la base de datos tras ${intentos} intentos. Revisa que el servicio de MySQL esté encendido.`);
+process.exit(1);
