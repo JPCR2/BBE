@@ -433,6 +433,32 @@ describe("Usuarios (solo administradores)", () => {
     expect((await admin.patch("/api/usuarios/1").send({ activo: "no" })).status).toBe(400);
   });
 
+  it("borra un usuario que nunca entró, pero no a uno que ya entró ni a sí mismo", async () => {
+    const admin = await iniciarSesionDePrueba(app, { usuario: "admin", rol: "ADMIN" });
+    const yo = await db.usuario.findUniqueOrThrow({ where: { usuario: "admin" } });
+    const nuevo = await crearUsuario({ usuario: "creado.por.error" });
+    const conAcceso = await crearUsuario({ usuario: "ya.entro" });
+    await entrar("ya.entro").expect(200);
+
+    expect((await admin.delete(`/api/usuarios/${nuevo.id}`)).status).toBe(204);
+    expect(await db.usuario.findUnique({ where: { id: nuevo.id } })).toBeNull();
+
+    const usado = await admin.delete(`/api/usuarios/${conAcceso.id}`);
+    expect(usado.status).toBe(409);
+    expect(usado.body.error.codigo).toBe("USUARIO_CON_ACCESOS");
+    const propio = await admin.delete(`/api/usuarios/${yo.id}`);
+    expect(propio.status).toBe(409);
+    expect(propio.body.error.codigo).toBe("ACCION_SOBRE_SI_MISMO");
+    expect((await admin.delete("/api/usuarios/999999")).status).toBe(404);
+  });
+
+  it("un técnico no puede borrar usuarios", async () => {
+    const tecnico = await iniciarSesionDePrueba(app);
+    const otro = await crearUsuario({ usuario: "otro" });
+    expect((await tecnico.delete(`/api/usuarios/${otro.id}`)).status).toBe(403);
+    expect(await db.usuario.findUnique({ where: { id: otro.id } })).not.toBeNull();
+  });
+
   it("restablece la contraseña de otro: le quita el bloqueo y le cierra las sesiones", async () => {
     const admin = await iniciarSesionDePrueba(app, { usuario: "admin", rol: "ADMIN" });
     const tecnico = await iniciarSesionDePrueba(app, { usuario: "ana" });

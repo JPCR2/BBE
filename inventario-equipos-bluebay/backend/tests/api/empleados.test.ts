@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { crearApp } from "../../src/app.ts";
-import { crearDepartamento, crearEmpleado, crearEquipo, db, limpiarTablas, iniciarSesionDePrueba } from "../helpers/contexto.ts";
+import { crearDepartamento, crearEmpleado, crearEquipo, db, limpiarTablas, rechazo, iniciarSesionDePrueba } from "../helpers/contexto.ts";
 
 const app = crearApp({ db });
 // Todas las rutas exigen sesión: las pruebas usan un técnico ya autenticado.
@@ -180,21 +180,17 @@ describe("PATCH /api/empleados/:id (edición y desactivación)", () => {
     expect(res.body).toMatchObject({ puesto: "Jefa de Recepción", departamento: { nombre: "Contabilidad" } });
   });
 
-  it("no permite desactivar a quien todavía tiene equipos, y sí después de la devolución", async () => {
+  it("ya no se desactiva con PATCH: la salida se registra con «Dar de baja»", async () => {
     const empleado = await crearEmpleado();
-    const equipo = await crearEquipo();
-    const asignacion = await db.asignacion.create({ data: { equipoId: equipo.id, empleadoId: empleado.id } });
+    const res = await api().patch(`/api/empleados/${empleado.id}`).send({ activo: false });
+    expect(res.status).toBe(409);
+    expect(res.body.error.codigo).toBe("USA_DAR_DE_BAJA");
+    expect((await db.empleado.findUniqueOrThrow({ where: { id: empleado.id } })).activo).toBe(true);
+  });
 
-    const bloqueado = await api().patch(`/api/empleados/${empleado.id}`).send({ activo: false });
-    expect(bloqueado.status).toBe(409);
-    expect(bloqueado.body.error.codigo).toBe("EMPLEADO_CON_EQUIPOS");
-    expect(bloqueado.body.error.mensaje).toMatch(/1 equipo asignado/);
-
-    await api().post(`/api/asignaciones/${asignacion.id}/devolucion`).send({}).expect(200);
-    const desactivado = await api().patch(`/api/empleados/${empleado.id}`).send({ activo: false });
-    expect(desactivado.status).toBe(200);
-    expect(desactivado.body.activo).toBe(false);
-    // Se puede volver a activar.
+  it("un registro inactivo de antes (sin baja) se puede reactivar", async () => {
+    const empleado = await crearEmpleado();
+    await db.empleado.update({ where: { id: empleado.id }, data: { activo: false } });
     expect((await api().patch(`/api/empleados/${empleado.id}`).send({ activo: true })).body.activo).toBe(true);
   });
 
@@ -206,5 +202,144 @@ describe("PATCH /api/empleados/:id (edición y desactivación)", () => {
     expect((await api().patch(`/api/empleados/${empleado.id}`).send({ numeroEmpleado: otro.numeroEmpleado })).status).toBe(409);
     expect((await api().patch(`/api/empleados/${empleado.id}`).send({ numeroEmpleado: "2001" })).status).toBe(200);
     expect((await api().patch("/api/empleados/999999").send({ puesto: "X" })).status).toBe(404);
+  });
+});
+
+// =============================================================================
+describe("POST /api/empleados/:id/baja (renuncia, despido…)", () => {
+  const baja = (id: number, cuerpo: object) => api().post(`/api/empleados/${id}/baja`).send(cuerpo);
+  const valida = { fechaSalida: "2026-09-15", motivo: "RENUNCIA", observaciones: "  Se cambia de ciudad  " };
+
+  it("lo da de baja con fecha y motivo, y borra sus datos personales", async () => {
+    const departamento = await crearDepartamento("Recepción");
+    const empleado = await crearEmpleado({ numeroEmpleado: "1001", nombre: "Laura", apellidos: "Méndez Cruz", puesto: "Recepcionista", departamentoId: departamento.id });
+    const res = await baja(empleado.id, valida);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      nombre: "Ex empleado", apellidos: `#${empleado.id}`, numeroEmpleado: `EX-${empleado.id}`,
+      puesto: "Recepcionista", departamento: { nombre: "Recepción" }, activo: false, anonimizado: true,
+      salida: { fecha: "2026-09-15", motivo: "RENUNCIA", observaciones: "Se cambia de ciudad" },
+    });
+    expect(JSON.stringify(res.body)).not.toMatch(/Laura|Méndez|1001/);
+    const guardado = await db.empleado.findUniqueOrThrow({ where: { id: empleado.id } });
+    expect(guardado.anonimizadoEn).toBeInstanceOf(Date);
+  });
+
+  it("conserva su historial de equipos (para auditorías)", async () => {
+    const empleado = await crearEmpleado({ nombre: "Carlos" });
+    const equipo = await crearEquipo({ numeroSerie: "HIST-1" });
+    await db.asignacion.create({ data: { equipoId: equipo.id, empleadoId: empleado.id, fechaAsignacion: new Date("2026-08-01T12:00:00Z"), fechaDevolucion: new Date("2026-09-01T12:00:00Z") } });
+    await baja(empleado.id, { fechaSalida: "2026-09-10", motivo: "DESPIDO" }).expect(200);
+
+    const ficha = (await api().get(`/api/empleados/${empleado.id}`)).body;
+    expect(ficha.historial).toHaveLength(1);
+    expect(ficha.historial[0].equipo.numeroSerie).toBe("HIST-1");
+    expect(ficha.puedeEliminar).toBe(false);
+    const fichaEquipo = (await api().get(`/api/equipos/${equipo.id}`)).body;
+    expect(JSON.stringify(fichaEquipo)).toContain("Ex empleado");
+    expect(JSON.stringify(fichaEquipo)).not.toContain("Carlos");
+  });
+
+  it("no se puede dar de baja a quien todavía tiene equipos", async () => {
+    const empleado = await crearEmpleado();
+    const equipo = await crearEquipo();
+    await db.asignacion.create({ data: { equipoId: equipo.id, empleadoId: empleado.id } });
+    const res = await baja(empleado.id, valida);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatchObject({ codigo: "EMPLEADO_CON_EQUIPOS" });
+    expect(res.body.error.mensaje).toMatch(/1 equipo asignado.*devolución/);
+    expect((await db.empleado.findUniqueOrThrow({ where: { id: empleado.id } })).nombre).not.toBe("Ex empleado");
+  });
+
+  it("valida la fecha y el motivo", async () => {
+    const empleado = await crearEmpleado();
+    const sinDatos = await baja(empleado.id, {});
+    expect(sinDatos.status).toBe(400);
+    expect(Object.keys(sinDatos.body.error.campos).sort()).toEqual(["fechaSalida", "motivo"]);
+    expect((await baja(empleado.id, { fechaSalida: "2026-02-30", motivo: "RENUNCIA" })).body.error.campos.fechaSalida).toBeTruthy();
+    expect((await baja(empleado.id, { fechaSalida: "2026-09-01", motivo: "VACACIONES" })).body.error.campos.motivo).toMatch(/motivo/);
+    const futura = await baja(empleado.id, { fechaSalida: "2026-12-31", motivo: "RENUNCIA" });
+    expect(futura.body.error.campos.fechaSalida).toBe("La fecha de salida no puede ser futura.");
+    expect((await baja(empleado.id, { ...valida, observaciones: "x".repeat(256) })).body.error.campos.observaciones).toMatch(/255/);
+  });
+
+  it("hoy sí se acepta como fecha de salida (con la fecha del hotel)", async () => {
+    const empleado = await crearEmpleado();
+    // El reloj de estas pruebas es el real; hoy en el hotel nunca es futuro.
+    const { hoyEnElHotel } = await import("../../src/lib/fechas.ts");
+    expect((await baja(empleado.id, { fechaSalida: hoyEnElHotel(), motivo: "FIN_CONTRATO" })).status).toBe(200);
+  });
+
+  it("ya dado de baja: no se puede editar, reactivar, volver a dar de baja ni asignarle equipos", async () => {
+    const empleado = await crearEmpleado();
+    await baja(empleado.id, valida).expect(200);
+    for (const cambio of [{ activo: true }, { nombre: "Laura" }, { puesto: "Otro" }]) {
+      const res = await api().patch(`/api/empleados/${empleado.id}`).send(cambio);
+      expect(res.status).toBe(409);
+      expect(res.body.error.codigo).toBe("EMPLEADO_ANONIMIZADO");
+    }
+    expect((await baja(empleado.id, valida)).body.error.codigo).toBe("EMPLEADO_YA_DADO_DE_BAJA");
+    const equipo = await crearEquipo();
+    const asignar = await api().post("/api/asignaciones").send({ equipoId: equipo.id, empleadoId: empleado.id });
+    expect(asignar.status).toBe(409);
+    expect(asignar.body.error.mensaje).toBe(`Ex empleado #${empleado.id} ya no trabaja en el hotel; no se le pueden asignar equipos.`);
+  });
+
+  it("libera su número de empleado: se puede registrar a alguien nuevo con el mismo número", async () => {
+    const empleado = await crearEmpleado({ numeroEmpleado: "5005" });
+    await baja(empleado.id, valida).expect(200);
+    const nuevo = await api().post("/api/empleados").send({ numeroEmpleado: "5005", nombre: "Nuevo", apellidos: "Ingreso", puesto: "Recepcionista", departamentoId: empleado.departamentoId });
+    expect(nuevo.status).toBe(201);
+  });
+
+  it("aparece entre los inactivos y no entre los activos", async () => {
+    const empleado = await crearEmpleado();
+    await baja(empleado.id, valida).expect(200);
+    expect((await api().get("/api/empleados")).body.datos.map((e: { id: number }) => e.id)).not.toContain(empleado.id);
+    const inactivos = (await api().get("/api/empleados?estado=inactivos")).body;
+    expect(inactivos.datos[0]).toMatchObject({ id: empleado.id, nombre: "Ex empleado", anonimizado: true });
+  });
+
+  it("empleado inexistente o id inválido", async () => {
+    expect((await baja(999999, valida)).status).toBe(404);
+    expect((await api().post("/api/empleados/abc/baja").send(valida)).status).toBe(400);
+  });
+
+  it("la base rechaza datos de salida incompletos o en un empleado activo", async () => {
+    const empleado = await crearEmpleado();
+    for (const data of [
+      { activo: false, fechaSalida: new Date("2026-09-01") },
+      { activo: true, fechaSalida: new Date("2026-09-01"), motivoSalida: "RENUNCIA" as const },
+      { activo: false, anonimizadoEn: new Date() },
+    ]) {
+      const error = await rechazo(db.empleado.update({ where: { id: empleado.id }, data }));
+      expect(error.message).toMatch(/chk_empleados_(salida_completa|salida_solo_inactivo|anonimizado_con_salida)/);
+    }
+  });
+});
+
+// =============================================================================
+describe("DELETE /api/empleados/:id (registrado por error)", () => {
+  it("borra a quien nunca tuvo equipos", async () => {
+    const empleado = await crearEmpleado();
+    expect((await api().get(`/api/empleados/${empleado.id}`)).body.puedeEliminar).toBe(true);
+    expect((await api().delete(`/api/empleados/${empleado.id}`)).status).toBe(204);
+    expect(await db.empleado.findUnique({ where: { id: empleado.id } })).toBeNull();
+    expect((await api().get(`/api/empleados/${empleado.id}`)).status).toBe(404);
+  });
+
+  it("no borra a quien tiene historial, aunque ya haya devuelto todo", async () => {
+    const empleado = await crearEmpleado();
+    const equipo = await crearEquipo();
+    await db.asignacion.create({ data: { equipoId: equipo.id, empleadoId: empleado.id, fechaAsignacion: new Date("2026-08-01T12:00:00Z"), fechaDevolucion: new Date("2026-09-01T12:00:00Z") } });
+    const res = await api().delete(`/api/empleados/${empleado.id}`);
+    expect(res.status).toBe(409);
+    expect(res.body.error.codigo).toBe("EMPLEADO_CON_HISTORIAL");
+    expect(await db.empleado.findUnique({ where: { id: empleado.id } })).not.toBeNull();
+  });
+
+  it("empleado inexistente o id inválido", async () => {
+    expect((await api().delete("/api/empleados/999999")).status).toBe(404);
+    expect((await api().delete("/api/empleados/abc")).status).toBe(400);
   });
 });

@@ -7,7 +7,7 @@ afterAll(() => db.$disconnect());
 
 // =============================================================================
 describe("Estructura de la base de datos", () => {
-  it("tiene las 9 tablas, los 4 triggers y las 26 restricciones CHECK", async () => {
+  it("tiene las 9 tablas, los 4 triggers y las 29 restricciones CHECK", async () => {
     const tablas = await db.$queryRaw<{ nombre: string }[]>`
       SELECT TABLE_NAME AS nombre FROM information_schema.TABLES
       WHERE TABLE_SCHEMA = DATABASE() ORDER BY TABLE_NAME`;
@@ -26,7 +26,7 @@ describe("Estructura de la base de datos", () => {
     const checks = await db.$queryRaw<{ total: bigint }[]>`
       SELECT COUNT(*) AS total FROM information_schema.CHECK_CONSTRAINTS
       WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_NAME LIKE 'chk\\_%'`;
-    expect(Number(checks[0]!.total)).toBe(26);
+    expect(Number(checks[0]!.total)).toBe(29);
   });
 });
 

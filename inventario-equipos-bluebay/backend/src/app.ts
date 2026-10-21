@@ -109,7 +109,7 @@ export function crearApp({
   });
   api.use("/equipos", rutasEquipos(equipos));
   api.use("/departamentos", rutasDepartamentos(crearServicioDepartamentos(db)));
-  api.use("/empleados", rutasEmpleados(crearServicioEmpleados(db)));
+  api.use("/empleados", rutasEmpleados(crearServicioEmpleados(db, reloj)));
   api.use("/asignaciones", rutasAsignaciones(crearServicioAsignaciones(db)));
   api.use("/mantenimientos", rutasMantenimientos(crearServicioMantenimientos(db, reloj)));
   api.use("/bajas", rutasBajas(bajas));

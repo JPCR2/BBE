@@ -49,7 +49,9 @@ export function crearServicioAsignaciones(db: ClientePrisma) {
         throw new ErrorHttp(
           409,
           "EMPLEADO_INACTIVO",
-          `El registro de ${empleado.nombre} ${empleado.apellidos} está inactivo. Actívalo antes de asignarle un equipo.`,
+          empleado.anonimizadoEn
+            ? `${empleado.nombre} ${empleado.apellidos} ya no trabaja en el hotel; no se le pueden asignar equipos.`
+            : `El registro de ${empleado.nombre} ${empleado.apellidos} está inactivo. Actívalo antes de asignarle un equipo.`,
         );
       }
 

@@ -48,6 +48,14 @@ enum TipoMantenimiento {
   CORRECTIVO
 }
 
+/// Por qué un empleado dejó el hotel.
+enum MotivoSalida {
+  RENUNCIA
+  DESPIDO
+  FIN_CONTRATO
+  OTRO
+}
+
 /// "Próximo" y "vencido" no son estados: se calculan con fechaProgramada.
 enum EstadoMantenimiento {
   PROGRAMADO
@@ -74,8 +82,9 @@ model Departamento {
 // -----------------------------------------------------------------------------
 
 /// Personal del hotel al que se le pueden asignar equipos.
-/// Un empleado que deja el hotel se desactiva (activo = false), no se borra,
-/// para conservar su historial de asignaciones.
+/// Un empleado que deja el hotel se da de baja (activo = false, con fecha y
+/// motivo) y se anonimiza; no se borra, para conservar su historial de
+/// asignaciones. Solo se borra si nunca tuvo equipos (capturado por error).
 model Empleado {
   id             Int      @id @default(autoincrement())
   numeroEmpleado String   @unique @db.VarChar(20)
@@ -84,6 +93,13 @@ model Empleado {
   puesto         String   @db.VarChar(100)
   departamentoId Int
   activo         Boolean  @default(true)
+  /// Baja del empleado (renuncia, despido…). Al darlo de baja se anonimizan
+  /// sus datos personales pero se conserva su historial de equipos.
+  fechaSalida       DateTime?     @db.Date
+  motivoSalida      MotivoSalida?
+  observacionSalida String?       @db.VarChar(255)
+  /// Cuándo se borraron nombre, apellidos y número de empleado.
+  anonimizadoEn     DateTime?
   creadoEn       DateTime @default(now())
   actualizadoEn  DateTime @updatedAt
 

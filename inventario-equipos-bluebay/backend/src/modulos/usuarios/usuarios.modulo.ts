@@ -89,6 +89,19 @@ export function crearServicioUsuarios(db: ClientePrisma, reloj: () => Date) {
     },
 
     /**
+     * Borra un usuario creado por error: solo si nunca inició sesión. Los que
+     * ya entraron se desactivan, para saber quién tuvo acceso al sistema.
+     */
+    async eliminar(id: number, idPropio: number) {
+      const usuario = await buscar(id);
+      if (id === idPropio) throw new ErrorHttp(409, "ACCION_SOBRE_SI_MISMO", "No puedes eliminar tu propio usuario.");
+      if (usuario.ultimoAcceso) {
+        throw new ErrorHttp(409, "USUARIO_CON_ACCESOS", "Este usuario ya entró al sistema y no se puede borrar; desactívalo para quitarle el acceso.");
+      }
+      await db.usuario.delete({ where: { id } });
+    },
+
+    /**
      * Pone una contraseña nueva a otro usuario (p. ej. si la olvidó), le quita
      * el bloqueo y cierra sus sesiones. La propia se cambia en "Cambiar contraseña".
      */
@@ -123,6 +136,11 @@ export function rutasUsuarios(servicio: ServicioUsuarios): Router {
   rutas.patch("/:id", async (req, res) => {
     const id = validar(esquemaId, req.params.id);
     res.json(await servicio.editar(id, usuarioActual(res).id, validar(esquemaEditarUsuario, req.body)));
+  });
+
+  rutas.delete("/:id", async (req, res) => {
+    await servicio.eliminar(validar(esquemaId, req.params.id), usuarioActual(res).id);
+    res.status(204).end();
   });
 
   rutas.post("/:id/restablecer-contrasena", async (req, res) => {
