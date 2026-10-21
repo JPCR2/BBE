@@ -3,10 +3,11 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute } from "vue-router";
 import { ErrorApi } from "../api/cliente";
 import {
-  editarEmpleado, listarDepartamentos, listarEmpleados, obtenerEmpleado, registrarDepartamento, registrarEmpleado,
-  type Departamento, type DatosEmpleado, type Empleado, type FichaEmpleado, type ListadoEmpleados,
+  editarEmpleado, eliminarEmpleado, ETIQUETAS_MOTIVO_SALIDA, listarDepartamentos, listarEmpleados, obtenerEmpleado,
+  registrarDepartamento, registrarEmpleado, type Departamento, type DatosEmpleado, type Empleado, type FichaEmpleado, type ListadoEmpleados,
 } from "../api/empleados";
 import DialogoAsignar from "../componentes/DialogoAsignar.vue";
+import DialogoBajaEmpleado from "../componentes/DialogoBajaEmpleado.vue";
 import DialogoConfirmar from "../componentes/DialogoConfirmar.vue";
 import FormularioEmpleado from "../componentes/FormularioEmpleado.vue";
 import Icono from "../componentes/Icono.vue";
@@ -35,8 +36,9 @@ const erroresServidor = ref<Record<string, string>>({});
 const nombreDepartamento = ref("");
 const errorDepartamento = ref("");
 const asignando = ref(false);
-const confirmandoDesactivar = ref(false);
-const errorDesactivar = ref("");
+const dandoDeBaja = ref(false);
+const confirmandoEliminar = ref(false);
+const errorEliminar = ref("");
 
 let controlador: AbortController | undefined;
 let pausa: ReturnType<typeof setTimeout> | undefined;
@@ -154,17 +156,25 @@ async function guardarEmpleado(datos: DatosEmpleado) {
   }
 }
 
-async function desactivar() {
-  if (!seleccionado.value) return;
+function alDarDeBaja(ficha: FichaEmpleado) {
+  dandoDeBaja.value = false;
+  mostrarAviso(`Baja registrada. El registro quedó como «${nombreCompleto(ficha)}» y se conserva su historial de equipos.`);
+  cargarEmpleados(ficha.id);
+}
+
+async function eliminar() {
+  if (!seleccionado.value || enviando.value) return;
+  const nombre = nombreCompleto(seleccionado.value);
   enviando.value = true;
-  errorDesactivar.value = "";
+  errorEliminar.value = "";
   try {
-    await editarEmpleado(seleccionado.value.id, { activo: false });
-    mostrarAviso(`${nombreCompleto(seleccionado.value)} quedó como inactivo.`);
-    confirmandoDesactivar.value = false;
-    await cargarEmpleados(seleccionado.value.id);
+    await eliminarEmpleado(seleccionado.value.id);
+    confirmandoEliminar.value = false;
+    seleccionado.value = null;
+    mostrarAviso(`Se eliminó el registro de ${nombre}.`);
+    await cargarEmpleados();
   } catch (e) {
-    errorDesactivar.value = e instanceof ErrorApi ? e.message : "No se pudo desactivar al empleado.";
+    errorEliminar.value = e instanceof ErrorApi ? e.message : "No se pudo eliminar al empleado.";
   } finally {
     enviando.value = false;
   }
@@ -267,7 +277,8 @@ const empleadoParaDialogo = computed<Empleado | undefined>(() => seleccionado.va
                   <button type="button" class="boton-enlace" :aria-pressed="seleccionado?.id === persona.id" @click="verFicha(persona.id)">
                     {{ nombreCompleto(persona) }}
                   </button>
-                  <span v-if="!persona.activo" class="insignia insignia-neutra inactivo">Inactivo</span>
+                  <span v-if="persona.anonimizado" class="insignia insignia-neutra inactivo">Baja</span>
+                <span v-else-if="!persona.activo" class="insignia insignia-neutra inactivo">Inactivo</span>
                 </td>
                 <td class="tenue">{{ persona.puesto }}</td>
                 <td class="tenue">{{ persona.departamento.nombre }}</td>
@@ -314,8 +325,14 @@ const empleadoParaDialogo = computed<Empleado | undefined>(() => seleccionado.va
             </div>
           </div>
           <span class="insignia" :class="seleccionado.activo ? 'insignia-exito' : 'insignia-neutra'">
-            {{ seleccionado.activo ? "Activo" : "Inactivo" }}
+            {{ seleccionado.activo ? "Activo" : seleccionado.salida ? "Dado de baja" : "Inactivo" }}
           </span>
+          <div v-if="seleccionado.salida" class="bloque salida">
+            <h3>Salida del hotel</h3>
+            <p>{{ ETIQUETAS_MOTIVO_SALIDA[seleccionado.salida.motivo] }} · {{ fechaCorta(seleccionado.salida.fecha) }}</p>
+            <p v-if="seleccionado.salida.observaciones" class="tenue">{{ seleccionado.salida.observaciones }}</p>
+            <p v-if="seleccionado.anonimizado" class="campo-ayuda">Sus datos personales se borraron; se conserva su historial de equipos.</p>
+          </div>
 
           <div class="bloque">
             <h3>Equipos asignados</h3>
@@ -346,21 +363,24 @@ const empleadoParaDialogo = computed<Empleado | undefined>(() => seleccionado.va
             </ul>
           </div>
 
-          <div class="bloque acciones-ficha">
+          <div v-if="!seleccionado.anonimizado" class="bloque acciones-ficha">
             <button type="button" class="boton-enlace" @click="abrirEdicion">Editar datos del empleado</button>
-            <template v-if="seleccionado.activo">
-              <button
-                v-if="seleccionado.equiposVigentes.length === 0" type="button" class="boton-enlace peligro"
-                @click="errorDesactivar = ''; confirmandoDesactivar = true"
-              >
-                Desactivar empleado
+            <button v-if="!seleccionado.activo" type="button" class="boton-enlace" @click="reactivar">Volver a activar</button>
+            <template v-if="seleccionado.equiposVigentes.length === 0">
+              <button type="button" class="boton-enlace peligro" @click="dandoDeBaja = true">
+                Dar de baja (renuncia, despido…)
               </button>
-              <template v-else>
-                <span class="boton-enlace deshabilitado" aria-disabled="true">Desactivar empleado</span>
-                <span class="campo-ayuda">Primero registra la devolución de sus equipos.</span>
-              </template>
             </template>
-            <button v-else type="button" class="boton-enlace" @click="reactivar">Volver a activar</button>
+            <template v-else>
+              <span class="boton-enlace deshabilitado" aria-disabled="true">Dar de baja (renuncia, despido…)</span>
+              <span class="campo-ayuda">Primero registra la devolución de sus equipos.</span>
+            </template>
+            <template v-if="seleccionado.puedeEliminar">
+              <button type="button" class="boton-enlace peligro" @click="errorEliminar = ''; confirmandoEliminar = true">
+                Eliminar registro
+              </button>
+              <span class="campo-ayuda">Solo si se registró por error: nunca tuvo equipos.</span>
+            </template>
           </div>
         </div>
 
@@ -394,15 +414,17 @@ const empleadoParaDialogo = computed<Empleado | undefined>(() => seleccionado.va
     </div>
 
     <DialogoAsignar v-if="asignando" :empleado="empleadoParaDialogo" @asignado="alAsignar" @cerrar="asignando = false" />
+    <DialogoBajaEmpleado v-if="dandoDeBaja && seleccionado" :empleado="seleccionado" @guardado="alDarDeBaja" @cerrar="dandoDeBaja = false" />
     <DialogoConfirmar
-      v-if="confirmandoDesactivar && seleccionado"
-      titulo="¿Desactivar al empleado?"
-      :mensaje="`${nombreCompleto(seleccionado)} dejará de aparecer para asignarle equipos. Su historial se conserva y puedes volver a activarlo cuando quieras.`"
-      texto-confirmar="Desactivar empleado"
+      v-if="confirmandoEliminar && seleccionado"
+      titulo="¿Eliminar el registro?"
+      :mensaje="`Se borrará por completo a ${nombreCompleto(seleccionado)} (${seleccionado.numeroEmpleado}). Úsalo solo si se registró por error. Esta acción no se puede deshacer.`"
+      texto-confirmar="Eliminar registro"
+      peligro
       :enviando="enviando"
-      :error="errorDesactivar"
-      @confirmar="desactivar"
-      @cerrar="confirmandoDesactivar = false"
+      :error="errorEliminar"
+      @confirmar="eliminar"
+      @cerrar="confirmandoEliminar = false"
     />
   </div>
 </template>
@@ -429,6 +451,7 @@ const empleadoParaDialogo = computed<Empleado | undefined>(() => seleccionado.va
 .tabla tr.elegida { background: var(--primario-tenue); }
 .tenue { color: var(--texto-2); }
 .inactivo { margin-left: 8px; }
+.salida p { margin: 0; }
 .lateral { width: 350px; flex-shrink: 0; scroll-margin-top: 88px; }
 .titulo-lateral { margin: 0 0 12px; font-size: 17px; font-weight: 700; }
 .ficha { display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }

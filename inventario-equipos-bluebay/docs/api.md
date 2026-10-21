@@ -62,6 +62,7 @@ Cada usuario trae `id`, `usuario`, `nombre`, `rol` (`ADMIN` o `TECNICO`), `activ
 | GET | `/usuarios` | Activos primero y luego por nombre. |
 | POST | `/usuarios` | Alta: `usuario` (3 a 40 minúsculas sin acentos, números, `.`, `-` o `_`; se recorta y pasa a minúsculas), `nombre`, `rol` y `contrasena`. Responde 201. |
 | PATCH | `/usuarios/:id` | Edición parcial de `nombre`, `rol` y `activo`. Al desactivar se cierran sus sesiones. Un administrador no puede desactivarse ni cambiarse el rol a sí mismo. |
+| DELETE | `/usuarios/:id` | Borra un usuario que **nunca inició sesión** (creado por error). Si ya entró: 409 USUARIO_CON_ACCESOS; uno mismo: 409 ACCION_SOBRE_SI_MISMO. Responde 204. |
 | POST | `/usuarios/:id/restablecer-contrasena` | `{ contrasena }`. Quita el bloqueo y cierra sus sesiones. No se usa para la propia (para eso está `/auth/cambiar-contrasena`). |
 
 ## Inventario (parte 2)
@@ -92,7 +93,9 @@ Cada usuario trae `id`, `usuario`, `nombre`, `rol` (`ADMIN` o `TECNICO`), `activ
 | GET | `/empleados` | Listado paginado. Parámetros: `busqueda` (nombre, apellidos, número o puesto), `departamentoId`, `estado` (`activos`, `inactivos`, `todos`), `pagina`, `porPagina`. Devuelve también `conteos` de activos e inactivos, y cuántos equipos tiene asignados cada persona. |
 | GET | `/empleados/:id` | Ficha: datos, equipos vigentes e historial completo de asignaciones. |
 | POST | `/empleados` | Alta. Obligatorios: `numeroEmpleado`, `nombre`, `apellidos`, `puesto`, `departamentoId`. Queda activo. |
-| PATCH | `/empleados/:id` | Edición parcial, incluido `activo`. **No se puede desactivar a alguien que todavía tiene equipos asignados** (409 EMPLEADO_CON_EQUIPOS). |
+| PATCH | `/empleados/:id` | Edición parcial. `activo: true` reactiva un registro inactivo antiguo; para la salida del hotel se usa `/baja` (con `activo: false` responde 409 USA_DAR_DE_BAJA). Un empleado ya dado de baja no se edita (409 EMPLEADO_ANONIMIZADO). |
+| POST | `/empleados/:id/baja` | Renuncia, despido…: `fechaSalida` (AAAA-MM-DD, no futura), `motivo` (`RENUNCIA`, `DESPIDO`, `FIN_CONTRATO`, `OTRO`) y `observaciones` opcionales. Queda inactivo y se anonimiza: nombre «Ex empleado», apellidos «#id», número «EX-id». Se conservan puesto, departamento e historial. **No se puede deshacer.** Exige que no tenga equipos asignados (409 EMPLEADO_CON_EQUIPOS). |
+| DELETE | `/empleados/:id` | Borra al empleado solo si nunca tuvo equipos (registrado por error). Si tiene historial: 409 EMPLEADO_CON_HISTORIAL. Responde 204. |
 
 ## Asignaciones (parte 3)
 

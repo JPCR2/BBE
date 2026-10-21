@@ -49,6 +49,10 @@ Personal del hotel al que se le asignan equipos.
 | puesto | VARCHAR(100) | No | — | — | Puesto que ocupa |
 | departamentoId | INT | No | FK → departamentos.id | — | Departamento al que pertenece |
 | activo | BOOLEAN | No | — | verdadero | Falso cuando el empleado deja el hotel; el registro se conserva para no perder su historial |
+| fechaSalida | DATE | Sí | — | — | Día en que dejó el hotel (se captura en «Dar de baja») |
+| motivoSalida | ENUM | Sí | — | — | RENUNCIA, DESPIDO, FIN_CONTRATO u OTRO; va junto con la fecha de salida |
+| observacionSalida | VARCHAR(255) | Sí | — | — | Notas de la salida, sin datos personales |
+| anonimizadoEn | DATETIME(3) | Sí | — | — | Cuándo se borraron nombre, apellidos y número de empleado (quedan «Ex empleado», «#id», «EX-id») |
 | creadoEn | DATETIME(3) | No | — | fecha y hora actual | Fecha y hora de registro |
 | actualizadoEn | DATETIME(3) | No | — | — | Fecha y hora de la última modificación |
 
@@ -220,6 +224,9 @@ Sesiones abiertas del sistema (las administra express-session). Guardarlas en la
 | chk_bajas_articulos_cantidad_positiva | bajas_articulos | La cantidad es mayor que cero |
 | chk_bajas_articulos_costo_no_negativo | bajas_articulos | El costo es nulo o mayor o igual a cero |
 | chk_bajas_articulos_anios_validos | bajas_articulos | Los años de uso son nulos o están entre 0 y 100 |
+| chk_empleados_salida_completa | empleados | La fecha y el motivo de salida van juntos (los dos o ninguno) |
+| chk_empleados_salida_solo_inactivo | empleados | Solo un empleado inactivo puede tener fecha de salida |
+| chk_empleados_anonimizado_con_salida | empleados | Un empleado anonimizado debe estar inactivo y con fecha de salida |
 | chk_usuarios_usuario | usuarios | El usuario tiene de 3 a 40 minúsculas sin acentos, números, punto, guion o guion bajo |
 | chk_usuarios_intentos | usuarios | Los intentos fallidos no pueden ser negativos |
 

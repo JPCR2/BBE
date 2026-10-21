@@ -33,3 +33,16 @@ describe("formato", () => {
     expect(fechaDeHoyLarga(new Date("2026-09-18T18:00:00Z"))).toBe("Viernes 18 de septiembre de 2026");
   });
 });
+
+describe("iniciales del avatar", () => {
+  it("toma la inicial del nombre y de los apellidos", async () => {
+    const { iniciales } = await import("../src/utilidades/formato");
+    expect(iniciales({ nombre: "Laura", apellidos: "Méndez Cruz" })).toBe("LM");
+    expect(iniciales({ nombre: "Ángel", apellidos: "Ñúñez" })).toBe("ÁÑ");
+  });
+
+  it("para un dado de baja («Ex empleado #12») muestra EX, no E#", async () => {
+    const { iniciales } = await import("../src/utilidades/formato");
+    expect(iniciales({ nombre: "Ex empleado", apellidos: "#12" })).toBe("EX");
+  });
+});

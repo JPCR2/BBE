@@ -1,5 +1,6 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import type { Empleado } from "../src/api/empleados";
 import EmpleadosVista from "../src/vistas/EmpleadosVista.vue";
 import { crearRouterDePrueba, simularApi } from "./ayudantes";
 
@@ -9,16 +10,18 @@ beforeAll(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-const laura = { id: 1, numeroEmpleado: "DEMO-001", nombre: "Laura", apellidos: "Méndez Cruz", puesto: "Recepcionista", activo: true, departamento: { id: 1, nombre: "Recepción" }, equiposAsignados: 1 };
-const sofia = { id: 5, numeroEmpleado: "DEMO-005", nombre: "Sofía", apellidos: "Díaz Herrera", puesto: "Analista", activo: true, departamento: { id: 2, nombre: "Recursos Humanos" }, equiposAsignados: 0 };
+const laura: Empleado = { id: 1, numeroEmpleado: "DEMO-001", nombre: "Laura", apellidos: "Méndez Cruz", puesto: "Recepcionista", activo: true, departamento: { id: 1, nombre: "Recepción" }, equiposAsignados: 1, salida: null, anonimizado: false };
+const sofia: Empleado = { id: 5, numeroEmpleado: "DEMO-005", nombre: "Sofía", apellidos: "Díaz Herrera", puesto: "Analista", activo: true, departamento: { id: 2, nombre: "Recursos Humanos" }, equiposAsignados: 0, salida: null, anonimizado: false };
 
-const fichaDe = (empleado: typeof laura, conEquipo: boolean) => ({
+const fichaDe = (empleado: Empleado, conEquipo: boolean) => ({
   ...empleado,
   creadoEn: "2026-09-01T10:00:00.000Z",
   equiposVigentes: conEquipo
     ? [{ id: 1, fechaAsignacion: "2025-08-14T15:00:00.000Z", fechaDevolucion: null, observaciones: null, observacionesDevolucion: null, equipo: { id: 1, numeroSerie: "DEMO-SN-0001", tipo: "LAPTOP", marca: "Dell", modelo: "Latitude 5440", estado: "ACTIVO" } }]
     : [],
   historial: [],
+  // Laura tiene historial (no se puede borrar); Sofía nunca tuvo equipos.
+  puedeEliminar: !conEquipo,
 });
 
 function respuestaEstandar(url: string) {
@@ -53,19 +56,88 @@ describe("EmpleadosVista", () => {
     envoltura.unmount();
   });
 
-  it("no deja desactivar a quien tiene equipos y sí a quien no tiene", async () => {
+  it("no deja dar de baja a quien tiene equipos, y sí a quien no tiene", async () => {
     const { envoltura } = await montar();
-    expect(envoltura.find(".lateral").text()).toContain("Primero registra la devolución de sus equipos.");
+    const lateral = () => envoltura.find(".lateral");
+    expect(lateral().text()).toContain("Primero registra la devolución de sus equipos.");
+    expect(lateral().find("[aria-disabled=true]").text()).toBe("Dar de baja (renuncia, despido…)");
+    // Laura tiene historial: no se ofrece eliminarla.
+    expect(lateral().text()).not.toContain("Eliminar registro");
 
     await envoltura.findAll("tbody tr")[1]!.find("button").trigger("click");
     await flushPromises();
-    const lateral = envoltura.find(".lateral");
-    expect(lateral.text()).toContain("Sofía Díaz Herrera");
-    expect(lateral.text()).toContain("No tiene equipos asignados.");
-    const desactivar = lateral.findAll("button").find((b) => b.text() === "Desactivar empleado");
-    expect(desactivar).toBeDefined();
-    await desactivar!.trigger("click");
-    expect(document.body.textContent).toContain("¿Desactivar al empleado?");
+    expect(lateral().text()).toContain("Sofía Díaz Herrera");
+    const baja = lateral().findAll("button").find((b) => b.text().startsWith("Dar de baja"));
+    expect(baja).toBeDefined();
+    await baja!.trigger("click");
+    expect(document.body.textContent).toContain("Dar de baja a Sofía Díaz Herrera");
+    expect(document.body.textContent).toContain("Esta acción no se puede deshacer.");
+    envoltura.unmount();
+  });
+
+  it("dar de baja: pide motivo, no acepta fecha futura y manda fecha, motivo y notas", async () => {
+    const anonimizada = { ...fichaDe(sofia, false), nombre: "Ex empleado", apellidos: "#5", numeroEmpleado: "EX-5", activo: false, anonimizado: true,
+      salida: { fecha: "2026-10-01", motivo: "RENUNCIA", observaciones: "Se cambió de ciudad" }, puedeEliminar: false };
+    const { envoltura, llamadas } = await montar((url, init) =>
+      init?.method === "POST" && url === "/api/empleados/5/baja" ? { cuerpo: anonimizada } : respuestaEstandar(url),
+    );
+    await envoltura.findAll("tbody tr")[1]!.find("button").trigger("click");
+    await flushPromises();
+    await envoltura.find(".lateral").findAll("button").find((b) => b.text().startsWith("Dar de baja"))!.trigger("click");
+
+    const dialogo = () => envoltura.find("dialog");
+    expect(document.activeElement?.id).toBe("motivo-salida");
+    await dialogo().find("#fecha-salida").setValue("2999-01-01");
+    await dialogo().find("form").trigger("submit");
+    await flushPromises();
+    expect(dialogo().find("#error-motivo-salida").text()).toBe("Elige el motivo de la salida.");
+    expect(dialogo().find("#error-fecha-salida").text()).toBe("La fecha de salida no puede ser futura.");
+    expect(llamadas.filter((l) => l.init?.method === "POST")).toHaveLength(0);
+
+    await dialogo().find("#motivo-salida").setValue("RENUNCIA");
+    await dialogo().find("#fecha-salida").setValue("2026-10-01");
+    await dialogo().find("#observaciones-salida").setValue("Se cambió de ciudad");
+    await dialogo().find("form").trigger("submit");
+    await flushPromises();
+    const post = llamadas.find((l) => l.init?.method === "POST")!;
+    expect(JSON.parse(post.init!.body as string)).toEqual({ fechaSalida: "2026-10-01", motivo: "RENUNCIA", observaciones: "Se cambió de ciudad" });
+    expect(envoltura.find("dialog").exists()).toBe(false);
+    envoltura.unmount();
+  });
+
+  it("la ficha de alguien dado de baja muestra su salida y ya no deja editar ni asignar", async () => {
+    const exEmpleado = { ...sofia, id: 9, nombre: "Ex empleado", apellidos: "#9", numeroEmpleado: "EX-9", activo: false, anonimizado: true,
+      salida: { fecha: "2026-09-15", motivo: "DESPIDO" as const, observaciones: null } };
+    const { envoltura } = await montar((url) => {
+      if (url.startsWith("/api/empleados/9")) return { cuerpo: { ...fichaDe(exEmpleado, false), puedeEliminar: false } };
+      if (url.startsWith("/api/empleados?") || url === "/api/empleados") return { cuerpo: { datos: [exEmpleado], total: 1, pagina: 1, porPagina: 50, conteos: { activos: 0, inactivos: 1 } } };
+      return respuestaEstandar(url);
+    });
+    const lateral = envoltura.find(".lateral").text();
+    expect(envoltura.find("tbody tr").text()).toContain("Baja");
+    expect(lateral).toContain("Ex empleado #9");
+    expect(lateral).toContain("Dado de baja");
+    expect(lateral).toContain("Despido · 15/09/2026");
+    expect(lateral).toContain("Sus datos personales se borraron");
+    for (const texto of ["Editar datos del empleado", "Asignarle un equipo", "Volver a activar", "Dar de baja", "Eliminar registro"]) {
+      expect(lateral, texto).not.toContain(texto);
+    }
+    envoltura.unmount();
+  });
+
+  it("elimina a quien se registró por error (nunca tuvo equipos), tras confirmar", async () => {
+    const { envoltura, llamadas } = await montar((url, init) =>
+      init?.method === "DELETE" ? { estado: 204, cuerpo: null } : respuestaEstandar(url),
+    );
+    await envoltura.findAll("tbody tr")[1]!.find("button").trigger("click");
+    await flushPromises();
+    expect(envoltura.find(".lateral").text()).toContain("Solo si se registró por error");
+    await envoltura.find(".lateral").findAll("button").find((b) => b.text() === "Eliminar registro")!.trigger("click");
+    expect(document.body.textContent).toContain("Se borrará por completo a Sofía Díaz Herrera (DEMO-005)");
+    await envoltura.find("dialog form").trigger("submit");
+    await flushPromises();
+    const borrar = llamadas.find((l) => l.init?.method === "DELETE")!;
+    expect(borrar.url).toBe("/api/empleados/5");
     envoltura.unmount();
   });
 

@@ -69,8 +69,8 @@ Vite reenvía las llamadas a `/api` hacia el backend, así que ambos deben estar
 ### 4. Pruebas
 
 ```bash
-cd backend && npm test        # 340 pruebas contra la base de datos real (base inventario_test)
-cd frontend && npm test       # 178 pruebas de componentes y utilidades
+cd backend && npm test        # 356 pruebas contra la base de datos real (base inventario_test)
+cd frontend && npm test       # 188 pruebas de componentes y utilidades
 ```
 
 ## Estructura
@@ -153,6 +153,6 @@ npm run nube:admin      # crea tu usuario administrador de la demo
 - **Los datos derivados no se guardan.** Disponibilidad, tiempo de funcionamiento y avisos se calculan al consultar.
 - **Números de serie normalizados.** Sin espacios y en mayúsculas, al guardar y al buscar. Un lector de código de barras abre la ficha directamente.
 - **Fechas estrictas y hora del hotel.** Las fechas se validan como texto (el 30 de febrero se rechaza) y "hoy" se calcula con la zona America/Cancun.
-- **Nada se borra.** Un empleado que deja el hotel se desactiva; conserva su historial y no se le pueden asignar equipos.
+- **Baja de empleados con anonimización.** Cuando alguien renuncia o lo despiden se registra «Dar de baja» con fecha y motivo: se borran su nombre, apellidos y número de empleado («Ex empleado #12») y se conservan su puesto, departamento e historial de equipos para auditorías. Solo se puede **eliminar** por completo a un empleado que nunca tuvo equipos (registrado por error), y a un usuario que nunca inició sesión.
 - **Los filtros viven en la dirección.** `/inventario?asignacion=libres` o `/mantenimiento?mes=2026-10` se pueden guardar como favorito y el botón Atrás funciona.
 - **Avisos de mantenimiento a 7 días.** "Vencido" y "próximo" se calculan al consultar con la fecha del hotel, así que nunca quedan desactualizados. El estado del equipo y el siguiente preventivo se manejan a mano.

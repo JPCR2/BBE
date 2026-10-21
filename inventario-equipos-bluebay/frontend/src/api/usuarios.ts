@@ -32,3 +32,8 @@ export function editarUsuario(id: number, cambios: CambiosUsuario) {
 export function restablecerContrasena(id: number, contrasena: string) {
   return pedir<Usuario>(`/usuarios/${id}/restablecer-contrasena`, { metodo: "POST", cuerpo: { contrasena } });
 }
+
+/** Solo para usuarios que nunca iniciaron sesión (creados por error). */
+export function eliminarUsuario(id: number) {
+  return pedir<null>(`/usuarios/${id}`, { metodo: "DELETE" });
+}

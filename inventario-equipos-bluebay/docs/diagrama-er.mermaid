@@ -25,6 +25,10 @@ erDiagram
         varchar puesto
         int departamentoId FK
         boolean activo
+        date fechaSalida "opcional, al dar de baja"
+        enum motivoSalida "RENUNCIA, DESPIDO, FIN_CONTRATO, OTRO"
+        varchar observacionSalida "opcional"
+        datetime anonimizadoEn "datos personales borrados"
         datetime creadoEn
         datetime actualizadoEn
     }

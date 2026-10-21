@@ -88,7 +88,8 @@ describe("Pantalla de usuarios", () => {
     expect(propia.text()).toContain("Tú");
     expect(propia.findAll("button").map((b) => b.text())).toEqual(["Editar"]);
     expect(fila("Ana").findAll("button").map((b) => b.text())).toEqual(["Editar", "Desbloquear", "Desactivar"]);
-    expect(fila("Beto").findAll("button").map((b) => b.text())).toEqual(["Editar", "Contraseña", "Reactivar"]);
+    // Beto nunca entró: también se puede eliminar.
+    expect(fila("Beto").findAll("button").map((b) => b.text())).toEqual(["Editar", "Contraseña", "Reactivar", "Eliminar"]);
   });
 
   it("si la lista no carga, muestra el error y deja reintentar", async () => {
@@ -115,6 +116,31 @@ describe("Pantalla de usuarios", () => {
     expect(cuerpoDe(patch)).toEqual({ activo: false });
     expect(fila("Ana").text()).toContain("Inactivo");
     expect(avisos.map((a) => a.texto)).toContain("«alopez» ya no puede entrar al sistema.");
+  });
+});
+
+describe("Eliminar usuario", () => {
+  it("solo a quien nunca entró: confirma, llama a la API y lo quita de la tabla", async () => {
+    const { llamadas } = await montarVista((url, init) => (init?.method === "DELETE" ? { estado: 204, cuerpo: null } : { cuerpo: listado() }));
+    expect(fila("Ana").findAll("button").map((b) => b.text())).not.toContain("Eliminar");
+    await fila("Beto").findAll("button").find((b) => b.text() === "Eliminar")!.trigger("click");
+    expect(envoltura!.find("dialog").text()).toContain("Se borrará por completo el usuario «bruiz»");
+    await envoltura!.find("dialog form").trigger("submit");
+    await flushPromises();
+    expect(llamadas.find((l) => l.init?.method === "DELETE")!.url).toBe("/api/usuarios/3");
+    expect(envoltura!.findAll("tbody tr")).toHaveLength(2);
+    expect(avisos.map((a) => a.texto)).toContain("Se eliminó el usuario «bruiz».");
+  });
+
+  it("si la API lo rechaza (ya entró), muestra el motivo y no lo quita", async () => {
+    await montarVista((url, init) =>
+      init?.method === "DELETE" ? errorApi(409, "USUARIO_CON_ACCESOS", "Este usuario ya entró al sistema y no se puede borrar; desactívalo para quitarle el acceso.") : { cuerpo: listado() },
+    );
+    await fila("Beto").findAll("button").find((b) => b.text() === "Eliminar")!.trigger("click");
+    await envoltura!.find("dialog form").trigger("submit");
+    await flushPromises();
+    expect(envoltura!.find("dialog [role=alert]").text()).toMatch(/ya entró al sistema/);
+    expect(envoltura!.findAll("tbody tr")).toHaveLength(3);
   });
 });
 

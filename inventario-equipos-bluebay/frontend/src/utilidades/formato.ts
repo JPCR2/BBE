@@ -80,8 +80,15 @@ export function nombreCompleto(empleado: Pick<EmpleadoResumen, "nombre" | "apell
   return `${empleado.nombre} ${empleado.apellidos}`;
 }
 
+/**
+ * Iniciales para el avatar: "Laura" + "Méndez Cruz" → "LM". Si los apellidos
+ * no empiezan con letra (un dado de baja: "Ex empleado" + "#12"), se usan las
+ * dos primeras letras del nombre → "EX".
+ */
 export function iniciales(empleado: Pick<EmpleadoResumen, "nombre" | "apellidos">): string {
-  return `${empleado.nombre.charAt(0)}${empleado.apellidos.charAt(0)}`.toUpperCase();
+  const letra = (texto: string) => /\p{L}/u.exec(texto.trim().charAt(0))?.[0] ?? "";
+  const deApellidos = letra(empleado.apellidos);
+  return (deApellidos ? letra(empleado.nombre) + deApellidos : empleado.nombre.trim().slice(0, 2)).toUpperCase();
 }
 
 /** Fecha de hoy en el hotel como "AAAA-MM-DD" (para el máximo de los campos de fecha). */

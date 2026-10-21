@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { ETIQUETAS_ROL } from "../api/autenticacion";
 import { ErrorApi } from "../api/cliente";
-import { editarUsuario, listarUsuarios, type Usuario } from "../api/usuarios";
+import { editarUsuario, eliminarUsuario, listarUsuarios, type Usuario } from "../api/usuarios";
 import DialogoConfirmar from "../componentes/DialogoConfirmar.vue";
 import DialogoRestablecerContrasena from "../componentes/DialogoRestablecerContrasena.vue";
 import DialogoUsuario from "../componentes/DialogoUsuario.vue";
@@ -18,7 +18,7 @@ const error = ref("");
 /** Diálogo abierto: alta, edición, restablecer contraseña o (des)activar. */
 const dialogo = ref<
   | { tipo: "alta" }
-  | { tipo: "edicion" | "restablecer" | "activar"; usuario: Usuario }
+  | { tipo: "edicion" | "restablecer" | "activar" | "eliminar"; usuario: Usuario }
   | null
 >(null);
 const enviando = ref(false);
@@ -66,6 +66,24 @@ function alRestablecer(usuario: Usuario) {
   reemplazar(usuario);
   dialogo.value = null;
   mostrarAviso(`Contraseña de «${usuario.usuario}» restablecida.`);
+}
+
+/** Solo para usuarios que nunca entraron (creados por error). */
+async function eliminar() {
+  if (dialogo.value?.tipo !== "eliminar" || enviando.value) return;
+  const { usuario } = dialogo.value;
+  enviando.value = true;
+  errorConfirmar.value = "";
+  try {
+    await eliminarUsuario(usuario.id);
+    usuarios.value = usuarios.value.filter((u) => u.id !== usuario.id);
+    dialogo.value = null;
+    mostrarAviso(`Se eliminó el usuario «${usuario.usuario}».`);
+  } catch (e) {
+    errorConfirmar.value = e instanceof ErrorApi ? e.message : "No se pudo eliminar el usuario.";
+  } finally {
+    enviando.value = false;
+  }
 }
 
 function pedirCambioDeEstado(usuario: Usuario) {
@@ -152,6 +170,13 @@ async function cambiarEstado() {
                 >
                   {{ u.activo ? "Desactivar" : "Reactivar" }}
                 </button>
+                <button
+                  v-if="!u.ultimoAcceso" type="button" class="boton boton-peligro chico"
+                  :aria-label="`Eliminar a ${u.nombre}`" title="Solo se puede borrar a quien nunca inició sesión"
+                  @click="errorConfirmar = ''; dialogo = { tipo: 'eliminar', usuario: u }"
+                >
+                  Eliminar
+                </button>
               </template>
             </td>
           </tr>
@@ -169,12 +194,23 @@ async function cambiarEstado() {
         <dt>Administrador</dt>
         <dd>Todo lo del técnico y además crear, editar y desactivar usuarios.</dd>
       </dl>
-      <p class="subtitulo">Los usuarios no se borran: se desactivan, para conservar el historial. Tras 5 contraseñas incorrectas seguidas, el usuario se bloquea 15 minutos; para desbloquearlo antes, restablece su contraseña.</p>
+      <p class="subtitulo">Los usuarios que ya entraron no se borran: se desactivan, para saber quién tuvo acceso. Solo se puede eliminar a quien nunca inició sesión (creado por error). Tras 5 contraseñas incorrectas seguidas, el usuario se bloquea 15 minutos; para desbloquearlo antes, restablece su contraseña.</p>
     </section>
 
     <DialogoUsuario v-if="dialogo?.tipo === 'alta'" @cerrar="dialogo = null" @guardado="alCrear" />
     <DialogoUsuario v-if="dialogo?.tipo === 'edicion'" :usuario="dialogo.usuario" :es-uno-mismo="esYo(dialogo.usuario)" @cerrar="dialogo = null" @guardado="alEditar" />
     <DialogoRestablecerContrasena v-if="dialogo?.tipo === 'restablecer'" :usuario="dialogo.usuario" @cerrar="dialogo = null" @guardado="alRestablecer" />
+    <DialogoConfirmar
+      v-if="dialogo?.tipo === 'eliminar'"
+      titulo="Eliminar usuario"
+      :mensaje="`Se borrará por completo el usuario «${dialogo.usuario.usuario}» (${dialogo.usuario.nombre}). Como nunca inició sesión, no se pierde ningún registro de su actividad. Esta acción no se puede deshacer.`"
+      texto-confirmar="Eliminar usuario"
+      peligro
+      :enviando="enviando"
+      :error="errorConfirmar"
+      @confirmar="eliminar"
+      @cerrar="dialogo = null"
+    />
     <DialogoConfirmar
       v-if="dialogo?.tipo === 'activar'"
       :titulo="dialogo.usuario.activo ? 'Desactivar usuario' : 'Reactivar usuario'"
