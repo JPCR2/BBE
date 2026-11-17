@@ -1,11 +1,23 @@
 import type { ArticuloNuevo, DatosNuevaBaja } from "../api/bajas";
 
-export const MAXIMO_EQUIPOS_BAJA = 100;
+export const MAXIMO_EQUIPOS_BAJA = 500;
 export const MAXIMO_ARTICULOS_BAJA = 50;
 
-export const articuloVacio = (): ArticuloNuevo => ({ descripcion: "", cantidad: "1", costo: "", aniosUso: "", observaciones: "" });
+export const articuloVacio = (): ArticuloNuevo => ({ descripcion: "", cantidad: "1", costo: "", aniosUso: "", tiempoUso: "", observaciones: "" });
+
+/**
+ * Separa una lista pegada desde Excel o escaneada en números de serie: uno por
+ * renglón (también acepta comas, punto y coma o tabuladores).
+ */
+export function seriesDeTexto(texto: string): string[] {
+  return texto
+    .split(/[\n\r,;\t]+/)
+    .map((serie) => serie.replace(/\s+/g, "").toUpperCase())
+    .filter((serie) => serie !== "");
+}
 
 const MENSAJE_OBSERVACIONES = "Escribe el motivo de la baja y las condiciones.";
+const MENSAJE_TIEMPO = "El tiempo de uso admite máximo 40 caracteres.";
 
 /**
  * Validación en el navegador con los mismos mensajes y los mismos nombres de
@@ -22,6 +34,7 @@ export function validarBaja(datos: DatosNuevaBaja, hoy: string): Record<string, 
     const texto = equipo.observaciones.trim();
     if (texto === "") errores[`equipos.${i}.observaciones`] = MENSAJE_OBSERVACIONES;
     else if (texto.length > 255) errores[`equipos.${i}.observaciones`] = "Máximo 255 caracteres.";
+    if (equipo.tiempoUso.trim().length > 40) errores[`equipos.${i}.tiempoUso`] = MENSAJE_TIEMPO;
   });
 
   datos.articulos.forEach((articulo, i) => {
@@ -49,6 +62,8 @@ export function validarBaja(datos: DatosNuevaBaja, hoy: string): Record<string, 
       else if (Number(anios) < 0) errores[campo("aniosUso")] = "Los años de uso no pueden ser negativos.";
       else if (Number(anios) > 100) errores[campo("aniosUso")] = "Revisa los años de uso.";
     }
+
+    if (articulo.tiempoUso.trim().length > 40) errores[campo("tiempoUso")] = MENSAJE_TIEMPO;
 
     const observaciones = articulo.observaciones.trim();
     if (observaciones === "") errores[campo("observaciones")] = MENSAJE_OBSERVACIONES;

@@ -69,7 +69,7 @@ const hayMasPaginas = computed(() => !!listado.value && listado.value.pagina * l
     <div class="encabezado-pagina">
       <div>
         <h1 class="titulo-pagina">Bajas</h1>
-        <p class="subtitulo">Reportes «Bajas de equipo operacional». Un equipo dado de baja sale del inventario, pero su ficha e historial se conservan.</p>
+        <p class="subtitulo">Reportes «Baja de equipo operacional». Un equipo dado de baja sale del inventario, pero su ficha e historial se conservan.</p>
       </div>
       <RouterLink :to="{ name: 'nueva-baja' }" class="boton boton-primario"><Icono nombre="mas" :tamano="18" :grosor="2" />Registrar baja</RouterLink>
     </div>

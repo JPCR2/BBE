@@ -1,7 +1,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { avisos as avisosFlotantes } from "../src/composables/useAvisos";
-import { articuloVacio, resumenRenglones, validarBaja } from "../src/utilidades/bajas";
+import { articuloVacio, resumenRenglones, seriesDeTexto, validarBaja } from "../src/utilidades/bajas";
 import BajasVista from "../src/vistas/BajasVista.vue";
 import FichaEquipoVista from "../src/vistas/FichaEquipoVista.vue";
 import NuevaBajaVista from "../src/vistas/NuevaBajaVista.vue";
@@ -50,7 +50,7 @@ async function montar(componente: unknown, ruta: string, responder: Parameters<t
 // =============================================================================
 describe("validarBaja", () => {
   const completos = () => ({
-    equipos: [{ id: 1, observaciones: "No enciende" }],
+    equipos: [{ id: 1, observaciones: "No enciende", tiempoUso: "" }],
     articulos: [{ ...articuloVacio(), descripcion: "Tóners", cantidad: "13", observaciones: "Usados" }],
     fechaBaja: "2026-09-29",
     elaboro: "Joel",
@@ -70,16 +70,34 @@ describe("validarBaja", () => {
 
   it("marca cada renglón con los mismos nombres de campo que la API", () => {
     const datos = completos();
-    datos.equipos.push({ id: 2, observaciones: "  " });
-    datos.articulos.push({ descripcion: "", cantidad: "0", costo: "-5", aniosUso: "2.5", observaciones: "" });
+    datos.equipos.push({ id: 2, observaciones: "  ", tiempoUso: "x".repeat(41) });
+    datos.articulos.push({ descripcion: "", cantidad: "0", costo: "-5", aniosUso: "2.5", tiempoUso: "y".repeat(41), observaciones: "" });
     expect(validarBaja(datos, "2026-09-29")).toEqual({
       "equipos.1.observaciones": "Escribe el motivo de la baja y las condiciones.",
+      "equipos.1.tiempoUso": "El tiempo de uso admite máximo 40 caracteres.",
       "articulos.1.descripcion": "Describe el artículo, por ejemplo «Baterías de UPS».",
       "articulos.1.cantidad": "La cantidad debe ser mayor que cero.",
       "articulos.1.costo": "El costo no puede ser negativo.",
       "articulos.1.aniosUso": "Escribe los años de uso sin decimales (0 si es menos de un año).",
+      "articulos.1.tiempoUso": "El tiempo de uso admite máximo 40 caracteres.",
       "articulos.1.observaciones": "Escribe el motivo de la baja y las condiciones.",
     });
+  });
+
+  it("acepta el tiempo de uso escrito («5 a 6 años») y hasta 500 equipos por baja", () => {
+    const datos = completos();
+    datos.equipos[0]!.tiempoUso = "5 a 6 años";
+    datos.articulos[0]!.tiempoUso = "6 a 8 años";
+    expect(validarBaja(datos, "2026-09-29")).toEqual({});
+    const muchos = { ...completos(), equipos: Array.from({ length: 500 }, (_, i) => ({ id: i + 1, observaciones: "x", tiempoUso: "" })) };
+    expect(validarBaja(muchos, "2026-09-29")).toEqual({});
+    muchos.equipos.push({ id: 501, observaciones: "x", tiempoUso: "" });
+    expect(validarBaja(muchos, "2026-09-29").equipos).toBe("Máximo 500 equipos por baja.");
+  });
+
+  it("separa una lista pegada de Excel en números de serie normalizados", () => {
+    expect(seriesDeTexto(" 0016caf31c53\r\nNTMN34GF70E6\n\n147911431 0077523; ab-1\tCD-2 ,")).toEqual(["0016CAF31C53", "NTMN34GF70E6", "1479114310077523", "AB-1", "CD-2"]);
+    expect(seriesDeTexto("  \n ")).toEqual([]);
   });
 
   it.each([
@@ -190,7 +208,8 @@ describe("Registrar baja", () => {
     await envoltura.find("#articulo-0-descripcion").setValue("Baterías UPS no-break");
     await envoltura.find("#articulo-0-cantidad").setValue("19");
     await envoltura.find("#articulo-0-costo").setValue("28,500");
-    await envoltura.find("#articulo-0-aniosUso").setValue("10");
+    await envoltura.find("#equipo-0-tiempoUso").setValue("5 a 6 años");
+    await envoltura.find("#articulo-0-tiempoUso").setValue("6 a 8 años");
     await envoltura.find("#articulo-0-observaciones").setValue("No retienen carga");
     await capturar(envoltura);
     expect(envoltura.find("button[type=submit]").text()).toBe("Dar de baja 1 equipo y 1 artículo");
@@ -206,8 +225,8 @@ describe("Registrar baja", () => {
 
     await enviarYConfirmar();
     expect(cuerpoEnviado).toEqual({
-      equipos: [{ id: 1, observaciones: "No enciende" }],
-      articulos: [{ descripcion: "Baterías UPS no-break", cantidad: "19", costo: "28,500", aniosUso: "10", observaciones: "No retienen carga" }],
+      equipos: [{ id: 1, observaciones: "No enciende", tiempoUso: "5 a 6 años" }],
+      articulos: [{ descripcion: "Baterías UPS no-break", cantidad: "19", costo: "28,500", aniosUso: "", tiempoUso: "6 a 8 años", observaciones: "No retienen carga" }],
       fechaBaja: "2026-09-29",
       elaboro: "Joel Polanco",
     });
@@ -218,6 +237,59 @@ describe("Registrar baja", () => {
     expect(exito.find("a[target=_blank]").attributes("href")).toBe("/api/reportes/baja/7");
     expect(avisosFlotantes.map((a) => a.texto)).toContain("Baja registrada con el folio BAJA-2026-0003.");
     expect(llamadas.some((l) => l.url.startsWith("/api/mantenimientos/avisos"))).toBe(true);
+  });
+
+  it("agrega de una vez los equipos de una lista de series y explica cuáles no se pudieron agregar", async () => {
+    let enviado: unknown;
+    const { envoltura } = await montar(NuevaBajaVista, "/bajas/nueva", (url, init) => {
+      if (url === "/api/bajas/verificar-series") {
+        enviado = JSON.parse(String(init!.body));
+        return {
+          cuerpo: {
+            revisadas: 5,
+            disponibles: [
+              { id: 11, numeroSerie: "0016CAF31C53", tipo: "TELEFONO", marca: "Nortel", modelo: "IP 2002", ubicacion: null },
+              { id: 12, numeroSerie: "NTMN34GF70E6", tipo: "TELEFONO", marca: "Avaya", modelo: "M3904", ubicacion: null },
+            ],
+            noEncontrados: ["NO-EXISTE"],
+            yaDeBaja: [{ numeroSerie: "VIEJO-1", folio: "BAJA-2026-0001" }],
+            asignados: [{ numeroSerie: "ASIG-1", empleado: "Ana López" }],
+            repetidos: ["0016CAF31C53"],
+          },
+        };
+      }
+      return listado([]);
+    });
+    await envoltura.find("#lista-series").setValue("0016caf31c53\nNTMN34GF70E6\n0016CAF31C53\nNO-EXISTE\nVIEJO-1\nASIG-1");
+    await envoltura.findAll("button").find((b) => b.text().includes("Revisar y agregar"))!.trigger("click");
+    await flushPromises();
+
+    expect(enviado).toEqual({ series: ["0016CAF31C53", "NTMN34GF70E6", "0016CAF31C53", "NO-EXISTE", "VIEJO-1", "ASIG-1"] });
+    expect(envoltura.findAll(".renglon-equipo .serie").map((s) => s.text())).toEqual(["0016CAF31C53", "NTMN34GF70E6"]);
+    const revision = envoltura.find(".revision").text();
+    expect(revision).toContain("Se revisaron 5 números de serie: se agregaron 2 equipos.");
+    expect(revision).toContain("No están en el inventario (1): NO-EXISTE");
+    expect(revision).toContain("Ya están dados de baja (1): VIEJO-1 (BAJA-2026-0001)");
+    expect(revision).toContain("Siguen asignados (1): ASIG-1 (Ana López)");
+    expect(revision).toContain("Venían repetidos en la lista (1): 0016CAF31C53");
+    // En el cuadro quedan solo las series con problema.
+    expect((envoltura.find("#lista-series").element as HTMLTextAreaElement).value).toBe("NO-EXISTE\nVIEJO-1\nASIG-1");
+
+    // El motivo y el tiempo de uso del primero se aplican a los demás del mismo tipo.
+    await envoltura.find("#equipo-0-observaciones").setValue("Equipo obsoleto / falla en display");
+    await envoltura.find("#equipo-0-tiempoUso").setValue("5 a 6 años");
+    await envoltura.findAll(".renglon-equipo")[0]!.findAll("button").find((b) => b.text().includes("Aplicar a los demás «Teléfono»"))!.trigger("click");
+    expect((envoltura.find("#equipo-1-observaciones").element as HTMLInputElement).value).toBe("Equipo obsoleto / falla en display");
+    expect((envoltura.find("#equipo-1-tiempoUso").element as HTMLInputElement).value).toBe("5 a 6 años");
+  });
+
+  it("una lista vacía no llama a la API y lo explica", async () => {
+    const { envoltura, llamadas } = await montar(NuevaBajaVista, "/bajas/nueva", () => listado([]));
+    await envoltura.find("#lista-series").setValue("  \n  ");
+    await envoltura.findAll("button").find((b) => b.text().includes("Revisar y agregar"))!.trigger("click");
+    await flushPromises();
+    expect(envoltura.text()).toContain("Pega o escanea al menos un número de serie (uno por renglón).");
+    expect(llamadas).toHaveLength(0);
   });
 
   it("permite un acta solo de artículos y marca el renglón con error", async () => {

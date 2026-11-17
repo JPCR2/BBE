@@ -64,7 +64,7 @@ Inventario de equipos de cómputo. Cada registro es una unidad física.
 |---|---|---|---|---|---|
 | id | INT | No | PK | autoincremental | Identificador interno del equipo |
 | numeroSerie | VARCHAR(100) | No | Única | — | Número de serie o Service Tag del fabricante; se guarda sin espacios y en mayúsculas |
-| tipo | ENUM | No | — | — | ESCRITORIO, LAPTOP, ALL_IN_ONE, MONITOR, IMPRESORA u OTRO |
+| tipo | ENUM | No | — | — | ESCRITORIO, LAPTOP, ALL_IN_ONE, MONITOR, IMPRESORA, TELEFONO, SWITCH, ACCESS_POINT, NO_BREAK, TECLADO, MOUSE, BOCINA, LECTOR_HUELLA, FUENTE_PODER, CARGADOR, CAMARA, SERVIDOR, TPV u OTRO |
 | marca | VARCHAR(80) | No | — | — | Marca del equipo |
 | modelo | VARCHAR(100) | No | — | — | Modelo del equipo (aparece en el reporte de baja) |
 | especificaciones | TEXT | Sí | — | — | Características técnicas (procesador, memoria, disco…) |
@@ -76,6 +76,7 @@ Inventario de equipos de cómputo. Cada registro es una unidad física.
 | fechaVencimientoGarantia | DATE | Sí | — | — | Fecha en que vence la garantía; no puede ser anterior a la fecha de adquisición. Obligatoria en altas nuevas |
 | bajaId | INT | Sí | FK → bajas.id | — | Acta con la que se dio de baja; solo la tienen los equipos en estado BAJA |
 | observacionBaja | VARCHAR(255) | Sí | — | — | Motivo de la baja y condiciones del equipo; obligatorio si tiene acta, vacío si no |
+| tiempoUsoBaja | VARCHAR(40) | Sí | — | — | Tiempo de uso escrito al darlo de baja (ej. «5 a 6 años»); solo en equipos con acta y nunca vacío |
 | creadoEn | DATETIME(3) | No | — | fecha y hora actual | Fecha y hora de registro (alta en el sistema) |
 | actualizadoEn | DATETIME(3) | No | — | — | Fecha y hora de la última modificación |
 
@@ -143,6 +144,7 @@ Renglón del acta para algo que no está en el inventario (baterías de UPS, tó
 | cantidad | INT | No | — | — | Mayor que cero |
 | costo | DECIMAL(10,2) | Sí | — | — | Costo total del renglón en MXN (no por unidad); no negativo |
 | aniosUso | INT | Sí | — | — | Años de uso, de 0 a 100 (0 = menos de un año) |
+| tiempoUso | VARCHAR(40) | Sí | — | — | Tiempo de uso como texto (ej. «6 a 8 años»); si está, el reporte lo usa en lugar de aniosUso |
 | observaciones | VARCHAR(255) | No | — | — | Motivo de la baja y condiciones |
 
 ## Tabla `usuarios`

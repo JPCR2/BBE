@@ -149,7 +149,11 @@ También trae `fecha` (la fecha con la que aparece en el calendario: la de reali
 
 ## Bajas (parte 5)
 
-El acta sigue el formato del hotel «Bajas de equipo operacional». Cada renglón lleva su propio motivo y condiciones (`observaciones`). Un acta puede incluir equipos del inventario y artículos sin número de serie (baterías, tóners…). Trae `folio`, `fechaBaja`, `elaboro` (quién capturó), `costoTotal`, `equipos` (con `fechaAdquisicion`, `costo`, `tiempoFuncionamiento` hasta el día de la baja y `observaciones`) y `articulos` (`descripcion`, `cantidad`, `costo`, `aniosUso`, `observaciones`).
+El acta sigue el formato del hotel «Bajas de equipo operacional». Cada renglón lleva su propio motivo y condiciones (`observaciones`). Un acta puede incluir equipos del inventario y artículos sin número de serie (baterías, tóners…). Trae `folio`, `fechaBaja`, `elaboro` (quién capturó), `costoTotal`, `equipos` (con `fechaAdquisicion`, `costo`, `tiempoFuncionamiento` hasta el día de la baja y `observaciones`) y `articulos` (`descripcion`, `cantidad`, `costo`, `aniosUso`, `tiempoUso`, `observaciones`). Cada equipo y cada artículo admite `tiempoUso` opcional (texto de hasta 40 caracteres, por ejemplo «5 a 6 años»); en un equipo sin él, el reporte calcula el tiempo con la fecha de adquisición. Un acta admite hasta 500 equipos y 50 artículos.
+
+### POST /api/bajas/verificar-series
+
+Revisa una lista de números de serie (pegada desde Excel o escaneada) contra el inventario, sin modificar nada. Cuerpo: `{ "series": ["0016CAF31C53", "NTMN34GF70E6", …] }` (máximo 1000). Responde `revisadas`, `disponibles` (equipos que se pueden dar de baja: `id`, `numeroSerie`, `tipo`, `marca`, `modelo`, `ubicacion`), `noEncontrados`, `yaDeBaja` (con su `folio`), `asignados` (con el `empleado`) y `repetidos`.
 
 | Método | Ruta | Descripción |
 |---|---|---|

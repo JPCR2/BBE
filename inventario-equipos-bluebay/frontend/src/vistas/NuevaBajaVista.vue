@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
-import { registrarBaja, urlReporteBaja, type ArticuloNuevo, type Baja, type DatosNuevaBaja } from "../api/bajas";
+import { registrarBaja, urlReporteBaja, verificarSeries, type ArticuloNuevo, type Baja, type DatosNuevaBaja, type EquipoParaBaja, type RevisionDeSeries } from "../api/bajas";
 import { ErrorApi } from "../api/cliente";
 import { listarEquipos, obtenerEquipo, type EquipoResumen } from "../api/equipos";
 import DialogoConfirmar from "../componentes/DialogoConfirmar.vue";
@@ -9,11 +9,11 @@ import Icono from "../componentes/Icono.vue";
 import InsigniaEstado from "../componentes/InsigniaEstado.vue";
 import { mostrarAviso } from "../composables/useAvisos";
 import { recargarAvisos } from "../composables/useAvisosMantenimiento";
-import { MAXIMO_ARTICULOS_BAJA, MAXIMO_EQUIPOS_BAJA, articuloVacio, resumenRenglones, validarBaja } from "../utilidades/bajas";
+import { MAXIMO_ARTICULOS_BAJA, MAXIMO_EQUIPOS_BAJA, articuloVacio, resumenRenglones, seriesDeTexto, validarBaja } from "../utilidades/bajas";
 import { ETIQUETAS_TIPO, hoyEnElHotel, nombreCompleto } from "../utilidades/formato";
 
 /**
- * Registrar una baja con el formato del hotel "Bajas de equipo operacional":
+ * Registrar una baja con el formato del hotel "Baja de equipo operacional":
  * equipos del inventario (cada uno con su motivo) y artículos sin número de
  * serie. Tras confirmar, se imprime el reporte y se firma a mano.
  */
@@ -21,7 +21,7 @@ const ruta = useRoute();
 const hoy = hoyEnElHotel();
 
 // ---------------------------------------------------- equipos del inventario
-interface Elegido { equipo: EquipoResumen; observaciones: string }
+interface Elegido { equipo: EquipoParaBaja; observaciones: string; tiempoUso: string }
 const elegidos = ref<Elegido[]>([]);
 const avisoInicial = ref<{ texto: string; equipoId?: number } | null>(null);
 
@@ -68,7 +68,7 @@ const estaElegido = (id: number) => elegidos.value.some((e) => e.equipo.id === i
 function alternar(equipo: EquipoResumen) {
   if (estaElegido(equipo.id)) quitarEquipo(equipo.id);
   else if (!equipo.asignacionVigente) {
-    elegidos.value.push({ equipo, observaciones: "" });
+    elegidos.value.push({ equipo, observaciones: "", tiempoUso: "" });
     quitarError("equipos");
   }
 }
@@ -89,6 +89,60 @@ function copiarPrimerMotivo() {
       quitarError(`equipos.${i}.observaciones`);
     }
   });
+}
+
+/** Copia el motivo y el tiempo de uso de un renglón a los demás equipos del mismo tipo que aún no los tienen. */
+function aplicarAlMismoTipo(indice: number) {
+  const origen = elegidos.value[indice];
+  if (!origen) return;
+  elegidos.value.forEach((e, i) => {
+    if (i === indice || e.equipo.tipo !== origen.equipo.tipo) return;
+    if (e.observaciones.trim() === "" && origen.observaciones.trim() !== "") {
+      e.observaciones = origen.observaciones;
+      quitarError(`equipos.${i}.observaciones`);
+    }
+    if (e.tiempoUso.trim() === "" && origen.tiempoUso.trim() !== "") e.tiempoUso = origen.tiempoUso;
+  });
+}
+const cuantosDelMismoTipo = (tipo: string) => elegidos.value.filter((e) => e.equipo.tipo === tipo).length;
+
+// --------------------------------- lista de números de serie (pegar o escanear)
+const listaSeries = ref("");
+const revisandoLista = ref(false);
+const errorLista = ref("");
+const revision = ref<(RevisionDeSeries & { agregados: number }) | null>(null);
+
+/**
+ * Revisa contra el inventario la lista pegada desde Excel (o escaneada, una
+ * serie por renglón) y agrega de una vez los equipos que se pueden dar de baja.
+ */
+async function revisarLista() {
+  const series = seriesDeTexto(listaSeries.value);
+  if (series.length === 0) {
+    errorLista.value = "Pega o escanea al menos un número de serie (uno por renglón).";
+    return;
+  }
+  revisandoLista.value = true;
+  errorLista.value = "";
+  try {
+    const resultado = await verificarSeries(series);
+    let agregados = 0;
+    for (const equipo of resultado.disponibles) {
+      if (!estaElegido(equipo.id)) {
+        elegidos.value.push({ equipo, observaciones: "", tiempoUso: "" });
+        agregados++;
+      }
+    }
+    if (agregados > 0) quitarError("equipos");
+    revision.value = { ...resultado, agregados };
+    // Se dejan en el cuadro solo las series con problema, para revisarlas.
+    const conProblema = new Set([...resultado.noEncontrados, ...resultado.yaDeBaja.map((e) => e.numeroSerie), ...resultado.asignados.map((e) => e.numeroSerie)]);
+    listaSeries.value = series.filter((serie) => conProblema.has(serie)).filter((serie, i, todas) => todas.indexOf(serie) === i).join("\n");
+  } catch (e) {
+    errorLista.value = e instanceof ErrorApi ? e.message : "No se pudo revisar la lista.";
+  } finally {
+    revisandoLista.value = false;
+  }
 }
 
 // Desde la ficha del equipo llega ?equipo=ID con ese equipo ya elegido.
@@ -153,7 +207,7 @@ async function enfocarPrimerError() {
 }
 
 const cuerpo = (): DatosNuevaBaja => ({
-  equipos: elegidos.value.map((e) => ({ id: e.equipo.id, observaciones: e.observaciones })),
+  equipos: elegidos.value.map((e) => ({ id: e.equipo.id, observaciones: e.observaciones, tiempoUso: e.tiempoUso })),
   articulos: articulos.value.map((a) => ({ ...a })),
   ...datos,
 });
@@ -217,6 +271,8 @@ function registrarOtra() {
   elegidos.value = [];
   articulos.value = [];
   texto.value = "";
+  listaSeries.value = "";
+  revision.value = null;
   avisoInicial.value = null;
   datos.fechaBaja = hoy; // quien captura se conserva
   errores.value = {};
@@ -243,7 +299,7 @@ function registrarOtra() {
             Se {{ registrada.mantenimientosCancelados === 1 ? "canceló 1 mantenimiento programado" : `cancelaron ${registrada.mantenimientosCancelados} mantenimientos programados` }}.
           </template>
         </p>
-        <p class="consejo">Imprime el reporte y recaba las firmas del jefe departamental, el contralor de costos, el director y el contralor general.</p>
+        <p class="consejo">Imprime el reporte y recaba las firmas del jefe departamental, el contralor de costos, el director general y el contralor general.</p>
         <div class="acciones">
           <a :href="urlReporteBaja(registrada.id)" target="_blank" rel="noopener" class="boton boton-primario">
             <Icono nombre="imprimir" :tamano="18" />Imprimir reporte de baja
@@ -259,7 +315,7 @@ function registrarOtra() {
       <div class="encabezado-pagina">
         <div>
           <h1 class="titulo-pagina">Registrar baja</h1>
-          <p class="subtitulo">Sale en el formato «Bajas de equipo operacional». Cada renglón lleva su motivo y las condiciones. Los campos con * son obligatorios.</p>
+          <p class="subtitulo">Sale en el formato del hotel «Baja de equipo operacional» (Econova). Cada equipo lleva su motivo y las condiciones. Los campos con * son obligatorios.</p>
         </div>
       </div>
 
@@ -268,13 +324,40 @@ function registrarOtra() {
         <section class="tarjeta seccion" aria-labelledby="titulo-equipos">
           <div>
             <h2 id="titulo-equipos">1. Equipos del inventario</h2>
-            <p class="campo-ayuda">Los equipos iguales con el mismo motivo salen juntos en un renglón, con su cantidad y sus números de serie.</p>
+            <p class="campo-ayuda">En el resumen, los equipos del mismo tipo y motivo salen juntos con su cantidad y costo; en la relación, cada uno aparece con su número de serie.</p>
           </div>
 
           <p v-if="avisoInicial" class="aviso-alerta" role="alert">
             {{ avisoInicial.texto }}
             <RouterLink v-if="avisoInicial.equipoId" :to="{ name: 'ficha-equipo', params: { id: avisoInicial.equipoId } }">Ir a la ficha</RouterLink>
           </p>
+
+          <div class="campo">
+            <label for="lista-series">Agregar por lista de números de serie</label>
+            <textarea
+              id="lista-series" v-model="listaSeries" class="entrada entrada-mono lista-series" rows="4" spellcheck="false"
+              placeholder="Pega la columna de números de serie del Excel o escanéalos, uno por renglón"
+              aria-describedby="ayuda-lista-series"
+            />
+            <span id="ayuda-lista-series" class="campo-ayuda">
+              El sistema los compara contra el inventario: agrega los que se pueden dar de baja y te dice cuáles no existen, ya están dados de baja, siguen asignados o vienen repetidos.
+            </span>
+            <div>
+              <button type="button" class="boton boton-secundario" :disabled="revisandoLista" @click="revisarLista">
+                <Icono nombre="buscar" :tamano="18" />{{ revisandoLista ? "Revisando…" : "Revisar y agregar" }}
+              </button>
+            </div>
+            <p v-if="errorLista" class="aviso-error" role="alert">{{ errorLista }}</p>
+            <div v-if="revision" class="revision" role="status">
+              <strong>Se revisaron {{ revision.revisadas }} {{ revision.revisadas === 1 ? "número de serie" : "números de serie" }}: se {{ revision.agregados === 1 ? "agregó 1 equipo" : `agregaron ${revision.agregados} equipos` }}.</strong>
+              <ul>
+                <li v-if="revision.noEncontrados.length">No están en el inventario ({{ revision.noEncontrados.length }}): <span class="serie">{{ revision.noEncontrados.join(", ") }}</span>. Regístralos primero o agrégalos como artículo sin número de serie.</li>
+                <li v-if="revision.yaDeBaja.length">Ya están dados de baja ({{ revision.yaDeBaja.length }}): <span class="serie">{{ revision.yaDeBaja.map((e) => e.folio ? `${e.numeroSerie} (${e.folio})` : e.numeroSerie).join(", ") }}</span>.</li>
+                <li v-if="revision.asignados.length">Siguen asignados ({{ revision.asignados.length }}): {{ revision.asignados.map((e) => `${e.numeroSerie} (${e.empleado})`).join(", ") }}. Registra su devolución primero.</li>
+                <li v-if="revision.repetidos.length">Venían repetidos en la lista ({{ revision.repetidos.length }}): <span class="serie">{{ revision.repetidos.join(", ") }}</span>. Se tomaron una sola vez.</li>
+              </ul>
+            </div>
+          </div>
 
           <div class="campo">
             <label for="buscar-baja">Buscar equipos</label>
@@ -331,6 +414,22 @@ function registrarOtra() {
                 >
                 <span v-if="errores[`equipos.${i}.observaciones`]" :id="idError(`equipos.${i}.observaciones`)" class="campo-error">{{ errores[`equipos.${i}.observaciones`] }}</span>
               </div>
+              <div class="campo tiempo">
+                <label :for="`equipo-${i}-tiempoUso`">Tiempo de uso</label>
+                <input
+                  :id="`equipo-${i}-tiempoUso`" v-model="elegido.tiempoUso" class="entrada" maxlength="40" placeholder="Ej. 5 a 6 años"
+                  :aria-invalid="!!errores[`equipos.${i}.tiempoUso`]" :aria-describedby="idError(`equipos.${i}.tiempoUso`) ?? `ayuda-equipo-${i}-tiempoUso`"
+                  @input="quitarError(`equipos.${i}.tiempoUso`)"
+                >
+                <span v-if="errores[`equipos.${i}.tiempoUso`]" :id="idError(`equipos.${i}.tiempoUso`)" class="campo-error">{{ errores[`equipos.${i}.tiempoUso`] }}</span>
+                <span v-else :id="`ayuda-equipo-${i}-tiempoUso`" class="campo-ayuda">Vacío: se calcula con la fecha de adquisición.</span>
+              </div>
+              <button
+                v-if="cuantosDelMismoTipo(elegido.equipo.tipo) > 1" type="button" class="boton-enlace aplicar"
+                :disabled="!elegido.observaciones.trim() && !elegido.tiempoUso.trim()" @click="aplicarAlMismoTipo(i)"
+              >
+                Aplicar a los demás «{{ ETIQUETAS_TIPO[elegido.equipo.tipo] }}»
+              </button>
               <button type="button" class="quitar" :aria-label="`Quitar ${elegido.equipo.numeroSerie} de la baja`" @click="quitarEquipo(elegido.equipo.id)">
                 <Icono nombre="cerrar" :tamano="18" :grosor="2" />
               </button>
@@ -343,7 +442,7 @@ function registrarOtra() {
         <section class="tarjeta seccion" aria-labelledby="titulo-articulos">
           <div>
             <h2 id="titulo-articulos">2. Artículos sin número de serie</h2>
-            <p class="campo-ayuda">Baterías de UPS, tóners, baterías de radio… lo que no está registrado en el inventario.</p>
+            <p class="campo-ayuda">Baterías de UPS, tóners, equipos con el número de serie borrado o no visible… lo que no está registrado en el inventario.</p>
           </div>
 
           <div v-for="(articulo, i) in articulos" :key="i" class="renglon-articulo" role="group" :aria-label="`Artículo ${i + 1}`">
@@ -374,14 +473,14 @@ function registrarOtra() {
               >
               <span v-if="errores[`articulos.${i}.costo`]" :id="idError(`articulos.${i}.costo`)" class="campo-error">{{ errores[`articulos.${i}.costo`] }}</span>
             </div>
-            <div class="campo corto">
-              <label :for="`articulo-${i}-aniosUso`">Años de uso</label>
+            <div class="campo mediano">
+              <label :for="`articulo-${i}-tiempoUso`">Tiempo de uso</label>
               <input
-                :id="`articulo-${i}-aniosUso`" v-model="articulo.aniosUso" class="entrada" inputmode="numeric" placeholder="Ej. 5"
-                :aria-invalid="!!errores[`articulos.${i}.aniosUso`]" :aria-describedby="idError(`articulos.${i}.aniosUso`)"
-                @input="quitarError(`articulos.${i}.aniosUso`)"
+                :id="`articulo-${i}-tiempoUso`" v-model="articulo.tiempoUso" class="entrada" maxlength="40" placeholder="Ej. 6 a 8 años"
+                :aria-invalid="!!errores[`articulos.${i}.tiempoUso`]" :aria-describedby="idError(`articulos.${i}.tiempoUso`)"
+                @input="quitarError(`articulos.${i}.tiempoUso`)"
               >
-              <span v-if="errores[`articulos.${i}.aniosUso`]" :id="idError(`articulos.${i}.aniosUso`)" class="campo-error">{{ errores[`articulos.${i}.aniosUso`] }}</span>
+              <span v-if="errores[`articulos.${i}.tiempoUso`]" :id="idError(`articulos.${i}.tiempoUso`)" class="campo-error">{{ errores[`articulos.${i}.tiempoUso`] }}</span>
             </div>
             <div class="campo motivo">
               <label :for="`articulo-${i}-observaciones`">Motivo y condiciones *</label>
@@ -420,7 +519,7 @@ function registrarOtra() {
             </div>
           </div>
           <p class="campo-ayuda">
-            El reporte sale con los espacios para firmar a mano: jefe departamental, contralor de costos (recibe), director (autorización) y contralor general (Vo. Bo.).
+            El reporte sale con el resumen por tipo de equipo, los espacios para firmar a mano (jefe departamental, contralor de costos, director general y contralor general) y la relación de cada equipo con su número de serie.
           </p>
         </section>
 
@@ -479,6 +578,11 @@ function registrarOtra() {
 }
 .identidad { width: 220px; padding-top: 6px; }
 .renglon-equipo .motivo { flex: 1; min-width: 220px; }
+.renglon-equipo .tiempo { flex: 0 0 170px; }
+.renglon-equipo .aplicar { align-self: center; }
+.lista-series { min-height: 96px; resize: vertical; }
+.revision { padding: 12px 14px; border-radius: var(--radio); background: var(--superficie-suave); border: 1px solid var(--borde); }
+.revision ul { margin: 6px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
 .renglon-articulo .descripcion { flex: 2 1 220px; }
 .renglon-articulo .corto { flex: 0 0 96px; }
 .renglon-articulo .mediano { flex: 0 0 130px; }

@@ -13,6 +13,7 @@
     "db:seed": "prisma db seed",
     "db:reset": "prisma migrate reset",
     "usuario:admin": "tsx scripts/crear-admin.ts",
+    "inventario:importar": "tsx scripts/importar-inventario.ts",
     "start:produccion": "tsx scripts/migrar.ts && tsx src/servidor.ts",
     "nube:migrar": "tsx --env-file=.env.nube scripts/migrar.ts",
     "nube:admin": "tsx --env-file=.env.nube scripts/crear-admin.ts",

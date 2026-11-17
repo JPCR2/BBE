@@ -1,6 +1,9 @@
 import { pedir } from "./cliente";
 
-export type TipoEquipo = "ESCRITORIO" | "LAPTOP" | "ALL_IN_ONE" | "MONITOR" | "IMPRESORA" | "OTRO";
+export type TipoEquipo =
+  | "ESCRITORIO" | "LAPTOP" | "ALL_IN_ONE" | "MONITOR" | "IMPRESORA"
+  | "TELEFONO" | "SWITCH" | "ACCESS_POINT" | "NO_BREAK" | "TECLADO" | "MOUSE" | "BOCINA"
+  | "LECTOR_HUELLA" | "FUENTE_PODER" | "CARGADOR" | "CAMARA" | "SERVIDOR" | "TPV" | "OTRO";
 export type EstadoEquipo = "ACTIVO" | "EN_MANTENIMIENTO" | "BAJA";
 export type FiltroAsignacion = "todos" | "asignados" | "libres";
 

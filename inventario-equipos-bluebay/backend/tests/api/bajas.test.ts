@@ -2,7 +2,9 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { crearApp } from "../../src/app.ts";
 import { fechaDesdeTexto } from "../../src/lib/fechas.ts";
 import { formatoFolio, type DetalleBaja } from "../../src/modulos/bajas/bajas.modulo.ts";
-import { fechaFormatoHotel, generarPdfBaja, renglonesDelActa, textoAnios } from "../../src/modulos/reportes/reporteBaja.ts";
+import {
+  configuracionDesdeEntorno, fechaFormatoHotel, generarPdfBaja, relacionPorTipo, renglonesDelActa, textoAnios, totalesDelActa,
+} from "../../src/modulos/reportes/reporteBaja.ts";
 import { crearEmpleado, crearEquipo, db, limpiarTablas, rechazo, iniciarSesionDePrueba } from "../helpers/contexto.ts";
 import { paginasDelPdf, textoDelPdf } from "../helpers/pdf.ts";
 
@@ -149,7 +151,9 @@ describe("POST /api/bajas", () => {
   it.each([
     ["equipos que no son lista", { equipos: "1,2" }, "equipos", "Los equipos van en una lista."],
     ["id negativo", { equipos: [{ id: -1, observaciones: "x" }] }, "equipos.0.id", "id numérico"],
-    ["más de 100 equipos", { equipos: Array.from({ length: 101 }, (_, i) => ({ id: i + 1, observaciones: "x" })) }, "equipos", "Máximo 100 equipos por baja."],
+    ["más de 500 equipos", { equipos: Array.from({ length: 501 }, (_, i) => ({ id: i + 1, observaciones: "x" })) }, "equipos", "Máximo 500 equipos por baja."],
+    ["tiempo de uso demasiado largo", { articulos: [{ ...bateriasUps, tiempoUso: "x".repeat(41) }] }, "articulos.0.tiempoUso", "máximo 40 caracteres"],
+    ["tiempo de uso de un equipo que no es texto", { equipos: [{ id: 1, observaciones: "x", tiempoUso: 5 }] }, "equipos.0.tiempoUso", "como texto"],
     ["más de 50 artículos", { articulos: Array.from({ length: 51 }, () => bateriasUps) }, "articulos", "Máximo 50 artículos por baja."],
     ["fecha futura", { articulos: [bateriasUps], fechaBaja: "2026-09-30" }, "fechaBaja", "La fecha de la baja no puede ser futura."],
     ["día inexistente", { articulos: [bateriasUps], fechaBaja: "2026-02-30" }, "fechaBaja", "ese día no existe en el calendario"],
@@ -333,6 +337,106 @@ describe("Reglas en la base de datos", () => {
 });
 
 // =============================================================================
+describe("Formato de noviembre de 2026: tiempo de uso escrito y bajas grandes", () => {
+  it("guarda el tiempo de uso escrito de equipos y artículos y lo devuelve en el detalle", async () => {
+    const a = await crearEquipo({ numeroSerie: "TEL-1" });
+    const res = await darDeBaja({
+      equipos: [{ id: a.id, observaciones: "Falla en display", tiempoUso: " 5 a 6 años " }],
+      articulos: [{ ...bateriasUps, aniosUso: "", tiempoUso: "6 a 8 años" }],
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.equipos[0]).toMatchObject({ numeroSerie: "TEL-1", tiempoUso: "5 a 6 años", tiempoFuncionamiento: null });
+    expect(res.body.articulos[0]).toMatchObject({ tiempoUso: "6 a 8 años", aniosUso: null });
+    expect((await db.equipo.findUniqueOrThrow({ where: { id: a.id } })).tiempoUsoBaja).toBe("5 a 6 años");
+  });
+
+  it("sin tiempo de uso escrito, el campo queda vacío (null)", async () => {
+    const a = await crearEquipo();
+    const res = await darDeBaja({ equipos: [{ id: a.id, observaciones: "x", tiempoUso: "  " }] });
+    expect(res.status).toBe(201);
+    expect(res.body.equipos[0].tiempoUso).toBeNull();
+  });
+
+  it("da de baja 188 equipos en una sola acta (como la de BBGE de octubre)", async () => {
+    const ids: number[] = [];
+    for (let i = 1; i <= 188; i++) ids.push((await crearEquipo({ numeroSerie: `BBGE-${i}`, costo: "1200" })).id);
+    const res = await darDeBaja({ equipos: ids.map((id) => ({ id, observaciones: "Equipo obsoleto / falla en display", tiempoUso: "5 a 6 años" })) });
+    expect(res.status).toBe(201);
+    expect(res.body.equipos).toHaveLength(188);
+    expect(res.body.costoTotal).toBe("225600.00");
+    expect(await db.equipo.count({ where: { estado: "BAJA" } })).toBe(188);
+  });
+
+  it("la base no acepta tiempo de uso en un equipo sin acta ni vacío en un artículo", async () => {
+    const equipo = await crearEquipo();
+    expect((await rechazo(db.equipo.update({ where: { id: equipo.id }, data: { tiempoUsoBaja: "5 años" } }))).message).toMatch(/chk_equipos_tiempo_uso_solo_con_acta/);
+    const acta = await darDeBaja({ articulos: [bateriasUps] });
+    const base = { bajaId: acta.body.id, descripcion: "X", cantidad: 1, observaciones: "Y" };
+    expect((await rechazo(db.bajaArticulo.create({ data: { ...base, tiempoUso: "  " } }))).message).toMatch(/chk_bajas_articulos_tiempo_uso_no_vacio/);
+  });
+
+  it("acepta los tipos de equipo nuevos (teléfono, switch, no-break, cargador…)", async () => {
+    for (const tipo of ["TELEFONO", "SWITCH", "ACCESS_POINT", "NO_BREAK", "TECLADO", "MOUSE", "BOCINA", "LECTOR_HUELLA", "FUENTE_PODER", "CARGADOR", "CAMARA", "SERVIDOR", "TPV"] as const) {
+      await db.equipo.create({ data: { numeroSerie: `T-${tipo}`, tipo, marca: "M", modelo: "X" } });
+    }
+    expect(await db.equipo.count()).toBe(13);
+  });
+});
+
+// =============================================================================
+describe("POST /api/bajas/verificar-series", () => {
+  const verificar = (series: unknown) => api().post("/api/bajas/verificar-series").send({ series });
+
+  it("separa los disponibles de los que no existen, ya están de baja, están asignados o vienen repetidos", async () => {
+    const libre = await crearEquipo({ numeroSerie: "0016CAF31C53" });
+    const otroLibre = await crearEquipo({ numeroSerie: "NTMN34GF70E6" });
+    const dado = await crearEquipo({ numeroSerie: "VIEJO-1" });
+    await darDeBajaEquipos([dado.id]);
+    const asignado = await crearEquipo({ numeroSerie: "ASIG-1" });
+    const empleado = await crearEmpleado({ nombre: "Ana", apellidos: "López" });
+    await db.asignacion.create({ data: { equipoId: asignado.id, empleadoId: empleado.id } });
+
+    const res = await verificar([" 0016caf31c53 ", "ntmn34gf70e6", "0016CAF31C53", "NO-EXISTE", "viejo-1", "ASIG-1", "", "   "]);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      revisadas: 5,
+      disponibles: [
+        { id: libre.id, numeroSerie: "0016CAF31C53", tipo: "LAPTOP", marca: "Marca", modelo: "Modelo", ubicacion: null },
+        { id: otroLibre.id, numeroSerie: "NTMN34GF70E6", tipo: "LAPTOP", marca: "Marca", modelo: "Modelo", ubicacion: null },
+      ],
+      noEncontrados: ["NO-EXISTE"],
+      yaDeBaja: [{ numeroSerie: "VIEJO-1", folio: "BAJA-2026-0001" }],
+      asignados: [{ numeroSerie: "ASIG-1", empleado: "Ana López" }],
+      repetidos: ["0016CAF31C53"],
+    });
+    // Solo revisa: no cambia nada.
+    expect((await db.equipo.findUniqueOrThrow({ where: { id: libre.id } })).estado).toBe("ACTIVO");
+  });
+
+  it("una lista vacía no es error", async () => {
+    const res = await verificar([]);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ revisadas: 0, disponibles: [], noEncontrados: [] });
+  });
+
+  it.each([
+    ["sin lista", undefined, "series", "Los números de serie van en una lista."],
+    ["un número que no es texto", [123], "series.0", "como texto"],
+    ["una serie demasiado larga", ["x".repeat(101)], "series.0", "máximo 100 caracteres"],
+    ["más de 1000 series", Array.from({ length: 1001 }, (_, i) => `S${i}`), "series", "Máximo 1000"],
+  ])("rechaza %s", async (_caso, series, campo, mensaje) => {
+    const res = await verificar(series);
+    expect(res.status).toBe(400);
+    expect(res.body.error.campos[campo]).toContain(mensaje);
+  });
+
+  it("exige sesión", async () => {
+    const { default: request } = await import("supertest");
+    expect((await request(app).post("/api/bajas/verificar-series").send({ series: ["X"] })).status).toBe(401);
+  });
+});
+
+// =============================================================================
 describe("Reporte de baja con el formato del hotel", () => {
   const detalle = (cambios: Partial<DetalleBaja>): DetalleBaja => ({
     id: 1, folio: "BAJA-2026-0001", fechaBaja: "2026-04-09", elaboro: "Joel Polanco", creadoEn: "2026-04-09T15:00:00.000Z",
@@ -340,10 +444,17 @@ describe("Reporte de baja con el formato del hotel", () => {
   });
   const equipo = (id: number, serie: string, cambios: Partial<DetalleBaja["equipos"][number]> = {}): DetalleBaja["equipos"][number] => ({
     id, numeroSerie: serie, tipo: "LAPTOP", marca: "Dell", modelo: "Latitude 5440", fechaAdquisicion: "2020-01-01",
-    costo: "10000.00", tiempoFuncionamiento: { anios: 6, meses: 3 }, observaciones: "No enciende", ...cambios,
+    costo: "10000.00", tiempoFuncionamiento: { anios: 6, meses: 3 }, observaciones: "No enciende", tiempoUso: null, ...cambios,
+  });
+  const articulo = (id: number, cambios: Partial<DetalleBaja["articulos"][number]> = {}): DetalleBaja["articulos"][number] => ({
+    id, descripcion: "Baterías UPS no-break", cantidad: 19, costo: "28500.00", aniosUso: 10, tiempoUso: null, observaciones: "No retienen carga", ...cambios,
+  });
+  const configuracion = configuracionDesdeEntorno({
+    FIRMA_JEFE_DEPARTAMENTAL: "Ana Torres", FIRMA_CONTRALOR_COSTOS: "Luis Pérez",
+    FIRMA_DIRECTOR_GENERAL: "Marta Ruiz", FIRMA_CONTRALOR_GENERAL: "Pedro Gómez",
   });
 
-  it("junta los equipos iguales con el mismo motivo en un renglón con su cantidad y sus series", () => {
+  it("junta los equipos del mismo tipo y motivo en un renglón con cantidad, costo unitario y costo total", () => {
     const renglones = renglonesDelActa(detalle({
       equipos: [
         equipo(1, "SN-1"),
@@ -351,14 +462,78 @@ describe("Reporte de baja con el formato del hotel", () => {
         equipo(3, "SN-3", { observaciones: "Pantalla rota" }),
         equipo(4, "SN-4", { modelo: "Latitude 7490" }),
       ],
-      articulos: [{ id: 1, descripcion: "Baterías UPS no-break", cantidad: 19, costo: "28500.00", aniosUso: 10, observaciones: "No retienen carga" }],
+      articulos: [articulo(1)],
     }));
     expect(renglones).toEqual([
-      { descripcion: "LAPTOP DELL LATITUDE 5440", series: ["SN-1", "SN-2"], cantidad: 2, centavos: 1_000_000, costoIncompleto: true, tiempoUso: "5 A 6 AÑOS", observaciones: "NO ENCIENDE" },
-      expect.objectContaining({ series: ["SN-3"], cantidad: 1, tiempoUso: "6 AÑOS", observaciones: "PANTALLA ROTA" }),
-      expect.objectContaining({ descripcion: "LAPTOP DELL LATITUDE 7490", series: ["SN-4"] }),
-      { descripcion: "BATERÍAS UPS NO-BREAK", series: [], cantidad: 19, centavos: 2_850_000, costoIncompleto: false, tiempoUso: "10 AÑOS", observaciones: "NO RETIENEN CARGA" },
+      {
+        descripcion: "LAPTOP", series: ["SN-1", "SN-2", "SN-4"], cantidad: 3, centavosUnitario: null, unitarioVarios: false,
+        centavos: 2_000_000, costoIncompleto: true, tiempoUso: "5 A 6 AÑOS", observaciones: "NO ENCIENDE",
+      },
+      expect.objectContaining({ series: ["SN-3"], cantidad: 1, centavosUnitario: 1_000_000, tiempoUso: "6 AÑOS", observaciones: "PANTALLA ROTA" }),
+      {
+        descripcion: "BATERÍAS UPS NO-BREAK", series: [], cantidad: 19, centavosUnitario: 150_000, unitarioVarios: false,
+        centavos: 2_850_000, costoIncompleto: false, tiempoUso: "10 AÑOS", observaciones: "NO RETIENEN CARGA",
+      },
     ]);
+  });
+
+  it("usa el tiempo de uso escrito cuando no hay fecha de adquisición y lo junta con el calculado", () => {
+    const [renglon] = renglonesDelActa(detalle({
+      equipos: [
+        equipo(1, "T-1", { tipo: "TELEFONO", tiempoFuncionamiento: null, tiempoUso: "5 a 6 años" }),
+        equipo(2, "T-2", { tipo: "TELEFONO", tiempoFuncionamiento: null, tiempoUso: "5 a 6 AÑOS " }),
+        equipo(3, "T-3", { tipo: "TELEFONO", tiempoFuncionamiento: { anios: 7, meses: 1 } }),
+      ],
+    }));
+    expect(renglon).toMatchObject({ descripcion: "TELÉFONO", cantidad: 3, centavosUnitario: 1_000_000, tiempoUso: "5 A 6 AÑOS / 7 AÑOS" });
+    const [sinDatos] = renglonesDelActa(detalle({ equipos: [equipo(1, "X", { tiempoFuncionamiento: null })] }));
+    expect(sinDatos!.tiempoUso).toBe("—");
+    const [deArticulo] = renglonesDelActa(detalle({ articulos: [articulo(1, { tiempoUso: "6 a 8 años", aniosUso: 3 })] }));
+    expect(deArticulo!.tiempoUso).toBe("6 A 8 AÑOS");
+  });
+
+  it("marca VARIOS cuando los equipos del renglón cuestan distinto y separa los «Otro» por marca y modelo", () => {
+    const renglones = renglonesDelActa(detalle({
+      equipos: [
+        equipo(1, "S-1", { tipo: "SWITCH", costo: "4500.00" }),
+        equipo(2, "S-2", { tipo: "SWITCH", costo: "3000.00" }),
+        equipo(3, "O-1", { tipo: "OTRO", marca: "Uni-T", modelo: "UT55" }),
+        equipo(4, "O-2", { tipo: "OTRO", marca: "Dormakaba", modelo: "EC90EN" }),
+      ],
+    }));
+    expect(renglones.map((r) => [r.descripcion, r.cantidad, r.unitarioVarios, r.centavos])).toEqual([
+      ["SWITCH", 2, true, 750_000],
+      ["UNI-T UT55", 1, false, 1_000_000],
+      ["DORMAKABA EC90EN", 1, false, 1_000_000],
+    ]);
+  });
+
+  it("suma el total de piezas y de costo, y agrupa la relación por tipo", () => {
+    const acta = detalle({
+      equipos: [equipo(1, "A"), equipo(2, "B", { tipo: "MOUSE", costo: "150.00" }), equipo(3, "C", { costo: null })],
+      articulos: [articulo(1)],
+    });
+    expect(totalesDelActa(renglonesDelActa(acta))).toEqual({ cantidad: 22, centavos: 3_865_000 });
+    expect(relacionPorTipo(acta).map((g) => [g.titulo, g.equipos.map((e) => e.numeroSerie)])).toEqual([
+      ["LAPTOP", ["A", "C"]],
+      ["MOUSE", ["B"]],
+    ]);
+  });
+
+  it("lee la razón social y los firmantes del .env; sin nombres solo sale el cargo", () => {
+    expect(configuracionDesdeEntorno({})).toEqual({
+      razonSocial: "ECONOVA SUSTAINABILITY S.A. de C.V.",
+      firmas: [
+        { etiqueta: "FIRMA", cargo: "JEFE DEPARTAMENTAL", nombre: "" },
+        { etiqueta: "RECIBE", cargo: "CONTRALOR DE COSTOS", nombre: "" },
+        { etiqueta: "AUTORIZACIÓN", cargo: "DIRECTOR GENERAL", nombre: "" },
+        { etiqueta: "VO. BO.", cargo: "CONTRALOR GENERAL", nombre: "" },
+      ],
+    });
+    expect(configuracionDesdeEntorno({ RAZON_SOCIAL_BAJA: "  OTRA S.A.  ", FIRMA_JEFE_DEPARTAMENTAL: " Ana Torres " })).toMatchObject({
+      razonSocial: "OTRA S.A.",
+      firmas: [{ nombre: "Ana Torres" }, { nombre: "" }, { nombre: "" }, { nombre: "" }],
+    });
   });
 
   it.each([
@@ -389,36 +564,60 @@ describe("Reporte de baja con el formato del hotel", () => {
 
     const texto = textoDelPdf(res.body as Buffer);
     for (const esperado of [
-      "GIRONA CONSULTORES, S.A. DE C.V.",
+      "ECONOVA SUSTAINABILITY S.A. de C.V.",
       "29-sep-26",
       "BAJA-2026-0001",
-      "BAJAS DE EQUIPO OPERACIONAL",
-      "DEPTO", "DESCRIPCIÓN", "CANTIDAD", "COSTO", "TIEMPO DE", "USO", "MOTIVO DE BAJA Y CONDICIONES", "OBSERVACIONES",
+      "BAJA DE EQUIPO OPERACIONAL",
+      "DEPTO", "DESCRIPCIÓN", "CANTIDAD", "COSTO", "UNITARIO", "TOTAL", "TIEMPO DE", "USO", "MOTIVO DE BAJA Y",
       "SISTEMAS",
-      "LAPTOP DELL OPTIPLEX 3080", "SERIE: SN-A", "6 AÑOS", "21,500.00", "NO ENCIENDE",
-      "BATERÍAS UPS NO-BREAK", "19", "28,500.00", "10 AÑOS", "NO RETIENEN CARGA",
-      "FIRMA", "JEFE DEPARTAMENTAL", "RECIBE", "CONTRALOR DE COSTOS", "AUTORIZACIÓN", "DIRECTOR", "VO. BO.", "CONTRALOR GENERAL",
-      "Página 1 de 1",
+      "LAPTOP", "6 AÑOS", "21,500.00", "NO ENCIENDE",
+      "BATERÍAS UPS NO-BREAK", "19", "1,500.00", "28,500.00", "10 AÑOS", "NO RETIENEN CARGA",
+      "TOTAL", "20", "50,000.00",
+      "FIRMA", "JEFE DEPARTAMENTAL", "RECIBE", "CONTRALOR DE COSTOS", "AUTORIZACIÓN", "DIRECTOR GENERAL", "VO. BO.", "CONTRALOR GENERAL",
+      "RELACIÓN DE EQUIPOS DADOS DE BAJA", "LAPTOP (1)", "N/SERIE", "DELL", "OPTIPLEX 3080", "SN-A",
+      "ARTÍCULOS SIN NÚMERO DE SERIE (19)",
+      "Página 1 de 2", "Página 2 de 2",
     ]) {
       expect(texto, `falta «${esperado}»`).toContain(esperado);
     }
   });
 
   it("un acta con muchos renglones pasa a más páginas y las numera", async () => {
-    const articulos = Array.from({ length: 30 }, (_, i) => ({ ...bateriasUps, descripcion: `Artículo ${i + 1}` }));
-    const pdf = await generarPdfBaja(detalle({ articulos: articulos.map((a, i) => ({ ...a, id: i + 1, costo: "28500.00" })) }));
+    const articulos = Array.from({ length: 30 }, (_, i) => articulo(i + 1, { descripcion: `Artículo ${i + 1}` }));
+    const pdf = await generarPdfBaja(detalle({ articulos }), configuracion);
     const paginas = paginasDelPdf(pdf);
-    expect(paginas).toBeGreaterThanOrEqual(2);
+    expect(paginas).toBeGreaterThanOrEqual(3);
     const texto = textoDelPdf(pdf);
     expect(texto).toContain("ARTÍCULO 30");
     expect(texto).toContain(`Página ${paginas} de ${paginas}`);
-    expect(texto.match(/BAJAS DE EQUIPO OPERACIONAL/g)).toHaveLength(paginas);
+    expect(texto.match(/BAJA DE EQUIPO OPERACIONAL/g)!.length + texto.match(/RELACIÓN DE EQUIPOS DADOS DE BAJA/g)!.length).toBe(paginas);
   });
 
   it("marca con * el costo de un renglón al que le falta el costo de algún equipo", async () => {
-    const texto = textoDelPdf(await generarPdfBaja(detalle({ equipos: [equipo(1, "SN-1"), equipo(2, "SN-2", { costo: null })] })));
+    const texto = textoDelPdf(await generarPdfBaja(detalle({ equipos: [equipo(1, "SN-1"), equipo(2, "SN-2", { costo: null })] }), configuracion));
     expect(texto).toContain("10,000.00 *");
     expect(texto).toContain("Algún equipo del renglón no tiene costo registrado");
+  });
+
+  it("imprime los nombres de los firmantes sobre su cargo", async () => {
+    const texto = textoDelPdf(await generarPdfBaja(detalle({ articulos: [articulo(1)] }), configuracion));
+    for (const nombre of ["ANA TORRES", "LUIS PÉREZ", "MARTA RUIZ", "PEDRO GÓMEZ"]) expect(texto).toContain(nombre);
+  });
+
+  it("una baja grande (188 equipos de 12 tipos, como la de BBGE) sale completa: resumen por tipo y relación de cada equipo", async () => {
+    const tipos = ["TELEFONO", "BOCINA", "LECTOR_HUELLA", "NO_BREAK", "TECLADO", "FUENTE_PODER", "SWITCH", "MOUSE", "IMPRESORA", "CAMARA", "ACCESS_POINT", "CARGADOR"] as const;
+    const equipos = Array.from({ length: 188 }, (_, i) => equipo(i + 1, `SN-${String(i + 1).padStart(3, "0")}`, { tipo: tipos[i % tipos.length]!, tiempoFuncionamiento: null, tiempoUso: "5 a 6 años", costo: "100.00" }));
+    const acta = detalle({ equipos });
+    expect(renglonesDelActa(acta)).toHaveLength(12);
+    const pdf = await generarPdfBaja(acta, configuracion);
+    const texto = textoDelPdf(pdf);
+    expect(texto).toContain("SN-001");
+    expect(texto).toContain("SN-188");
+    expect(texto).toContain("18,800.00");
+    expect(texto).toContain("188");
+    const paginas = paginasDelPdf(pdf);
+    expect(paginas).toBeGreaterThan(4);
+    expect(texto).toContain(`Página ${paginas} de ${paginas}`);
   });
 
   it("404 si el acta no existe y 400 si el id no es válido", async () => {

@@ -92,6 +92,12 @@ describe("Peticiones mal formadas", () => {
     expect(res.body.error).toEqual({ codigo: "CUERPO_DEMASIADO_GRANDE", mensaje: "Los datos enviados son demasiado grandes (máximo 100 KB)." });
   });
 
+  it("las actas de baja admiten hasta 512 KB (cientos de equipos), pero no más", async () => {
+    const res = await request(crearApp({ db })).post("/api/bajas").send({ elaboro: "a".repeat(600_000) });
+    expect(res.status).toBe(413);
+    expect(res.body.error.mensaje).toBe("Los datos enviados son demasiado grandes (máximo 512 KB).");
+  });
+
   it("una codificación no admitida responde 415 (no 500)", async () => {
     const res = await request(crearApp({ db })).post("/api/auth/iniciar-sesion")
       .set("Content-Type", "application/json").set("Content-Encoding", "rara").send("{}");

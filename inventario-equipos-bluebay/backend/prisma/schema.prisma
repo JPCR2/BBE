@@ -32,6 +32,19 @@ enum TipoEquipo {
   ALL_IN_ONE
   MONITOR
   IMPRESORA
+  TELEFONO
+  SWITCH
+  ACCESS_POINT
+  NO_BREAK
+  TECLADO
+  MOUSE
+  BOCINA
+  LECTOR_HUELLA
+  FUENTE_PODER
+  CARGADOR
+  CAMARA
+  SERVIDOR
+  TPV
   OTRO
 }
 
@@ -135,6 +148,9 @@ model Equipo {
   bajaId                   Int?
   /// Motivo de la baja y condiciones del equipo (columna "Observaciones" del acta).
   observacionBaja          String?      @db.VarChar(255)
+  /// Tiempo de uso escrito al darlo de baja (ej. "5 a 6 años") cuando no hay
+  /// fecha de adquisición para calcularlo.
+  tiempoUsoBaja            String?      @db.VarChar(40)
   creadoEn                 DateTime     @default(now())
   actualizadoEn            DateTime     @updatedAt
 
@@ -229,6 +245,8 @@ model BajaArticulo {
   costo         Decimal? @db.Decimal(10, 2)
   /// Años de uso; 0 = menos de un año.
   aniosUso      Int?
+  /// Tiempo de uso como texto (ej. "6 a 8 años"); si está, se usa en lugar de aniosUso.
+  tiempoUso     String?  @db.VarChar(40)
   /// Motivo de la baja y condiciones (columna "Observaciones").
   observaciones String   @db.VarChar(255)
 

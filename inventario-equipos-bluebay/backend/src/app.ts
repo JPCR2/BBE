@@ -67,6 +67,9 @@ export function crearApp({
   if (produccion) app.set("trust proxy", 1);
   // Encabezados de seguridad (evita que otra página meta el sistema en un iframe, etc.).
   app.use(helmet());
+  // Las actas de baja pueden traer cientos de equipos (la de BBGE tuvo 188):
+  // a esas rutas se les permite un cuerpo más grande; al resto, 100 KB.
+  app.use("/api/bajas", express.json({ limit: "512kb" }));
   app.use(express.json({ limit: "100kb" }));
   app.use(
     session({

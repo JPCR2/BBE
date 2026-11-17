@@ -42,7 +42,8 @@ export function traducirError(error: unknown): ErrorHttp {
     return new ErrorHttp(400, "JSON_INVALIDO", "El cuerpo de la petición no es un JSON válido.");
   }
   if (typeof error === "object" && error !== null && "type" in error && error.type === "entity.too.large") {
-    return new ErrorHttp(413, "CUERPO_DEMASIADO_GRANDE", "Los datos enviados son demasiado grandes (máximo 100 KB).");
+    const limite = "limit" in error && typeof error.limit === "number" ? Math.round(error.limit / 1024) : 100;
+    return new ErrorHttp(413, "CUERPO_DEMASIADO_GRANDE", `Los datos enviados son demasiado grandes (máximo ${limite} KB).`);
   }
   // Otros errores al leer el cuerpo (codificación o juego de caracteres no admitidos): son culpa de la petición, no del servidor.
   if (typeof error === "object" && error !== null && "type" in error && "status" in error && typeof error.status === "number" && error.status >= 400 && error.status < 500) {

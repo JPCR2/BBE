@@ -15,8 +15,8 @@ import { esquemaCosto } from "../equipos/equipos.esquemas.ts";
  * inventario y artículos sin número de serie (baterías, tóners…).
  */
 
-/** Máximos por acta. */
-export const MAXIMO_EQUIPOS_BAJA = 100;
+/** Máximos por acta (la baja de BBGE de octubre de 2026 tuvo 188 equipos). */
+export const MAXIMO_EQUIPOS_BAJA = 500;
 export const MAXIMO_ARTICULOS_BAJA = 50;
 
 // -----------------------------------------------------------------------------
@@ -25,10 +25,16 @@ export const MAXIMO_ARTICULOS_BAJA = 50;
 
 const MENSAJE_SIN_RENGLONES = "Agrega al menos un equipo o un artículo.";
 const observaciones = textoObligatorio("Escribe el motivo de la baja y las condiciones.", 255);
+/** "5 a 6 años", "Menos de 1 año"… Opcional: si falta, se calcula con la fecha de adquisición. */
+const tiempoUso = z.preprocess(
+  vacioAUndefined,
+  z.string({ error: "Escribe el tiempo de uso como texto." }).trim().max(40, "El tiempo de uso admite máximo 40 caracteres.").optional(),
+);
 
 const esquemaEquipoDeBaja = z.strictObject({
   id: z.number({ error: "Los equipos se indican con su id numérico." }).int().positive("Los equipos se indican con su id numérico."),
   observaciones,
+  tiempoUso,
 });
 
 const esquemaArticulo = z.strictObject({
@@ -48,6 +54,7 @@ const esquemaArticulo = z.strictObject({
       .max(100, "Revisa los años de uso.")
       .optional(),
   ),
+  tiempoUso,
   observaciones,
 });
 
@@ -71,6 +78,15 @@ export const esquemaCrearBaja = z
       contexto.addIssue({ code: "custom", path: ["equipos"], message: MENSAJE_SIN_RENGLONES });
     }
   });
+
+/** Lista de números de serie pegada o escaneada para revisarla contra el inventario. */
+export const esquemaVerificarSeries = z.strictObject({
+  series: z
+    .array(z.string({ error: "Cada número de serie va como texto." }).max(100, "Un número de serie admite máximo 100 caracteres."), {
+      error: "Los números de serie van en una lista.",
+    })
+    .max(MAXIMO_EQUIPOS_BAJA * 2, `Máximo ${MAXIMO_EQUIPOS_BAJA * 2} números de serie por revisión.`),
+});
 
 export const esquemaListarBajas = z.object({
   /** Folio del acta, número de serie de un equipo o descripción de un artículo. */
@@ -117,6 +133,7 @@ export function bajaDto(baja: BajaConRenglones) {
       /** Desde la adquisición hasta el día de la baja. */
       tiempoFuncionamiento: e.fechaAdquisicion ? tiempoTranscurrido(e.fechaAdquisicion, baja.fechaBaja) : null,
       observaciones: e.observacionBaja ?? "",
+      tiempoUso: e.tiempoUsoBaja,
     })),
     articulos: baja.articulos.map((a) => ({
       id: a.id,
@@ -124,6 +141,7 @@ export function bajaDto(baja: BajaConRenglones) {
       cantidad: a.cantidad,
       costo: a.costo ? a.costo.toFixed(2) : null,
       aniosUso: a.aniosUso,
+      tiempoUso: a.tiempoUso,
       observaciones: a.observaciones,
     })),
   };
@@ -229,6 +247,49 @@ export function crearServicioBajas(db: ClientePrisma, reloj: () => Date = () => 
     },
 
     /**
+     * Compara una lista de números de serie (pegada desde Excel o escaneada)
+     * contra el inventario: cuáles se pueden dar de baja y por qué no los demás.
+     * No modifica nada.
+     */
+    async verificarSeries(series: string[]) {
+      const vistos = new Set<string>();
+      const repetidos = new Set<string>();
+      const normalizadas: string[] = [];
+      for (const original of series) {
+        const serie = normalizarNumeroSerie(original);
+        if (serie === "") continue;
+        if (vistos.has(serie)) repetidos.add(serie);
+        else {
+          vistos.add(serie);
+          normalizadas.push(serie);
+        }
+      }
+      const equipos = normalizadas.length
+        ? await db.equipo.findMany({
+            where: { numeroSerie: { in: normalizadas } },
+            include: { baja: true, asignaciones: { where: { fechaDevolucion: null }, include: { empleado: true }, take: 1 } },
+          })
+        : [];
+      const porSerie = new Map(equipos.map((e) => [e.numeroSerie, e]));
+      const disponibles: { id: number; numeroSerie: string; tipo: string; marca: string; modelo: string; ubicacion: string | null }[] = [];
+      const noEncontrados: string[] = [];
+      const yaDeBaja: { numeroSerie: string; folio: string | null }[] = [];
+      const asignados: { numeroSerie: string; empleado: string }[] = [];
+      for (const serie of normalizadas) {
+        const equipo = porSerie.get(serie);
+        if (!equipo) noEncontrados.push(serie);
+        else if (equipo.estado === "BAJA") yaDeBaja.push({ numeroSerie: serie, folio: equipo.baja?.folio ?? null });
+        else if (equipo.asignaciones.length > 0) {
+          const empleado = equipo.asignaciones[0]!.empleado;
+          asignados.push({ numeroSerie: serie, empleado: `${empleado.nombre} ${empleado.apellidos}`.trim() });
+        } else {
+          disponibles.push({ id: equipo.id, numeroSerie: equipo.numeroSerie, tipo: equipo.tipo, marca: equipo.marca, modelo: equipo.modelo, ubicacion: equipo.ubicacion });
+        }
+      }
+      return { revisadas: normalizadas.length, disponibles, noEncontrados, yaDeBaja, asignados, repetidos: [...repetidos] };
+    },
+
+    /**
      * Registra el acta: los equipos pasan a BAJA con su motivo, sus
      * mantenimientos programados se cancelan y se guardan los artículos.
      * Todo o nada.
@@ -254,6 +315,7 @@ export function crearServicioBajas(db: ClientePrisma, reloj: () => Date = () => 
                     cantidad: a.cantidad,
                     costo: a.costo ?? null,
                     aniosUso: a.aniosUso ?? null,
+                    tiempoUso: a.tiempoUso ?? null,
                     observaciones: a.observaciones,
                   })),
                 },
@@ -264,7 +326,7 @@ export function crearServicioBajas(db: ClientePrisma, reloj: () => Date = () => 
             for (const equipo of datos.equipos) {
               const { count } = await tx.equipo.updateMany({
                 where: { id: equipo.id, estado: { not: "BAJA" }, asignaciones: { none: { fechaDevolucion: null } } },
-                data: { estado: "BAJA", bajaId: baja.id, observacionBaja: equipo.observaciones },
+                data: { estado: "BAJA", bajaId: baja.id, observacionBaja: equipo.observaciones, tiempoUsoBaja: equipo.tiempoUso ?? null },
               });
               if (count !== 1) {
                 throw new ErrorHttp(409, "EQUIPOS_CAMBIARON", "Algún equipo cambió mientras se registraba la baja. Revisa la lista e inténtalo de nuevo.");
@@ -305,6 +367,10 @@ export function rutasBajas(servicio: ServicioBajas): Router {
 
   rutas.get("/:id", async (req, res) => {
     res.json(await servicio.obtener(validar(esquemaId, req.params.id)));
+  });
+
+  rutas.post("/verificar-series", async (req, res) => {
+    res.json(await servicio.verificarSeries(validar(esquemaVerificarSeries, req.body).series));
   });
 
   rutas.post("/", async (req, res) => {
