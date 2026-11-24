@@ -26,9 +26,10 @@ services:
         value: production
       - key: NODE_VERSION
         value: "22"
-      # Muestra el aviso "Versión de demostración · datos ficticios".
+      # Versión de prueba con los equipos reales: sin el aviso de demostración.
+      # Con "true" muestra "Versión de demostración · datos ficticios".
       - key: VITE_MODO_DEMO
-        value: "true"
+        value: "false"
       # Render genera una clave al azar para firmar las cookies de sesión.
       - key: SESION_SECRETO
         generateValue: true

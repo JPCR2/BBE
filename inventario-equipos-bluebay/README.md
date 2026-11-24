@@ -144,7 +144,7 @@ npm run nube:admin      # crea tu usuario administrador de la demo
 - Encabezados de seguridad con `helmet` y límite de 30 intentos de inicio de sesión por IP cada 15 minutos (además del bloqueo por usuario).
 - Sin `SESION_SECRETO` la API no arranca.
 - Al arrancar aplica las migraciones pendientes con `prisma migrate deploy` (nunca `migrate dev`, que puede borrar datos).
-- La pantalla de inicio de sesión y la barra lateral avisan que es una **versión de demostración con datos ficticios**.
+- El aviso de **versión de demostración con datos ficticios** se activa con `VITE_MODO_DEMO=true` en `render.yaml`. La versión de prueba actual lo tiene apagado: lleva las computadoras reales (importadas de los Excel de bajas) y empleados ficticios, porque los datos de empleados no se van a recabar.
 
 ## Decisiones de diseño
 
