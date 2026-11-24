@@ -388,26 +388,26 @@ describe("POST /api/bajas/verificar-series", () => {
   const verificar = (series: unknown) => api().post("/api/bajas/verificar-series").send({ series });
 
   it("separa los disponibles de los que no existen, ya están de baja, están asignados o vienen repetidos", async () => {
-    const libre = await crearEquipo({ numeroSerie: "0016CAF31C53" });
-    const otroLibre = await crearEquipo({ numeroSerie: "NTMN34GF70E6" });
+    const libre = await crearEquipo({ numeroSerie: "0016CAF00A01" });
+    const otroLibre = await crearEquipo({ numeroSerie: "NTMN00TEST01" });
     const dado = await crearEquipo({ numeroSerie: "VIEJO-1" });
     await darDeBajaEquipos([dado.id]);
     const asignado = await crearEquipo({ numeroSerie: "ASIG-1" });
     const empleado = await crearEmpleado({ nombre: "Ana", apellidos: "López" });
     await db.asignacion.create({ data: { equipoId: asignado.id, empleadoId: empleado.id } });
 
-    const res = await verificar([" 0016caf31c53 ", "ntmn34gf70e6", "0016CAF31C53", "NO-EXISTE", "viejo-1", "ASIG-1", "", "   "]);
+    const res = await verificar([" 0016caf00a01 ", "ntmn34gf70e6", "0016CAF00A01", "NO-EXISTE", "viejo-1", "ASIG-1", "", "   "]);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       revisadas: 5,
       disponibles: [
-        { id: libre.id, numeroSerie: "0016CAF31C53", tipo: "LAPTOP", marca: "Marca", modelo: "Modelo", ubicacion: null },
-        { id: otroLibre.id, numeroSerie: "NTMN34GF70E6", tipo: "LAPTOP", marca: "Marca", modelo: "Modelo", ubicacion: null },
+        { id: libre.id, numeroSerie: "0016CAF00A01", tipo: "LAPTOP", marca: "Marca", modelo: "Modelo", ubicacion: null },
+        { id: otroLibre.id, numeroSerie: "NTMN00TEST01", tipo: "LAPTOP", marca: "Marca", modelo: "Modelo", ubicacion: null },
       ],
       noEncontrados: ["NO-EXISTE"],
       yaDeBaja: [{ numeroSerie: "VIEJO-1", folio: "BAJA-2026-0001" }],
       asignados: [{ numeroSerie: "ASIG-1", empleado: "Ana López" }],
-      repetidos: ["0016CAF31C53"],
+      repetidos: ["0016CAF00A01"],
     });
     // Solo revisa: no cambia nada.
     expect((await db.equipo.findUniqueOrThrow({ where: { id: libre.id } })).estado).toBe("ACTIVO");

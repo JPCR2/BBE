@@ -12,10 +12,10 @@ describe("Importar inventario desde CSV", () => {
   });
 
   it("normaliza el número de serie y el tipo, y acepta costo con comas o vacío", () => {
-    const { filas, errores } = leerCsvInventario(`${TITULOS}\n 0016caf31c53 ,telefono,Nortel,IP 2002,"1,200",Almacén,Teléfono IP\nX-2,MOUSE,HP,M1,,,\n`);
+    const { filas, errores } = leerCsvInventario(`${TITULOS}\n 0016caf00a01 ,telefono,Nortel,IP 2002,"1,200",Almacén,Teléfono IP\nX-2,MOUSE,HP,M1,,,\n`);
     expect(errores).toEqual([]);
     expect(filas).toEqual([
-      { linea: 2, numeroSerie: "0016CAF31C53", tipo: "TELEFONO", marca: "Nortel", modelo: "IP 2002", costo: "1200", ubicacion: "Almacén", especificaciones: "Teléfono IP" },
+      { linea: 2, numeroSerie: "0016CAF00A01", tipo: "TELEFONO", marca: "Nortel", modelo: "IP 2002", costo: "1200", ubicacion: "Almacén", especificaciones: "Teléfono IP" },
       { linea: 3, numeroSerie: "X-2", tipo: "MOUSE", marca: "HP", modelo: "M1", costo: null, ubicacion: null, especificaciones: null },
     ]);
   });

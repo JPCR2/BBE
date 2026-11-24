@@ -153,7 +153,7 @@ El acta sigue el formato del hotel «Bajas de equipo operacional». Cada rengló
 
 ### POST /api/bajas/verificar-series
 
-Revisa una lista de números de serie (pegada desde Excel o escaneada) contra el inventario, sin modificar nada. Cuerpo: `{ "series": ["0016CAF31C53", "NTMN34GF70E6", …] }` (máximo 1000). Responde `revisadas`, `disponibles` (equipos que se pueden dar de baja: `id`, `numeroSerie`, `tipo`, `marca`, `modelo`, `ubicacion`), `noEncontrados`, `yaDeBaja` (con su `folio`), `asignados` (con el `empleado`) y `repetidos`.
+Revisa una lista de números de serie (pegada desde Excel o escaneada) contra el inventario, sin modificar nada. Cuerpo: `{ "series": ["0016CAF00A01", "NTMN00TEST01", …] }` (máximo 1000). Responde `revisadas`, `disponibles` (equipos que se pueden dar de baja: `id`, `numeroSerie`, `tipo`, `marca`, `modelo`, `ubicacion`), `noEncontrados`, `yaDeBaja` (con su `folio`), `asignados` (con el `empleado`) y `repetidos`.
 
 | Método | Ruta | Descripción |
 |---|---|---|

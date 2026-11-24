@@ -96,7 +96,7 @@ describe("validarBaja", () => {
   });
 
   it("separa una lista pegada de Excel en números de serie normalizados", () => {
-    expect(seriesDeTexto(" 0016caf31c53\r\nNTMN34GF70E6\n\n147911431 0077523; ab-1\tCD-2 ,")).toEqual(["0016CAF31C53", "NTMN34GF70E6", "1479114310077523", "AB-1", "CD-2"]);
+    expect(seriesDeTexto(" 0016caf00a01\r\nNTMN00TEST01\n\n147900000 0000001; ab-1\tCD-2 ,")).toEqual(["0016CAF00A01", "NTMN00TEST01", "1479000000000001", "AB-1", "CD-2"]);
     expect(seriesDeTexto("  \n ")).toEqual([]);
   });
 
@@ -248,30 +248,30 @@ describe("Registrar baja", () => {
           cuerpo: {
             revisadas: 5,
             disponibles: [
-              { id: 11, numeroSerie: "0016CAF31C53", tipo: "TELEFONO", marca: "Nortel", modelo: "IP 2002", ubicacion: null },
-              { id: 12, numeroSerie: "NTMN34GF70E6", tipo: "TELEFONO", marca: "Avaya", modelo: "M3904", ubicacion: null },
+              { id: 11, numeroSerie: "0016CAF00A01", tipo: "TELEFONO", marca: "Nortel", modelo: "IP 2002", ubicacion: null },
+              { id: 12, numeroSerie: "NTMN00TEST01", tipo: "TELEFONO", marca: "Avaya", modelo: "M3904", ubicacion: null },
             ],
             noEncontrados: ["NO-EXISTE"],
             yaDeBaja: [{ numeroSerie: "VIEJO-1", folio: "BAJA-2026-0001" }],
             asignados: [{ numeroSerie: "ASIG-1", empleado: "Ana López" }],
-            repetidos: ["0016CAF31C53"],
+            repetidos: ["0016CAF00A01"],
           },
         };
       }
       return listado([]);
     });
-    await envoltura.find("#lista-series").setValue("0016caf31c53\nNTMN34GF70E6\n0016CAF31C53\nNO-EXISTE\nVIEJO-1\nASIG-1");
+    await envoltura.find("#lista-series").setValue("0016caf00a01\nNTMN00TEST01\n0016CAF00A01\nNO-EXISTE\nVIEJO-1\nASIG-1");
     await envoltura.findAll("button").find((b) => b.text().includes("Revisar y agregar"))!.trigger("click");
     await flushPromises();
 
-    expect(enviado).toEqual({ series: ["0016CAF31C53", "NTMN34GF70E6", "0016CAF31C53", "NO-EXISTE", "VIEJO-1", "ASIG-1"] });
-    expect(envoltura.findAll(".renglon-equipo .serie").map((s) => s.text())).toEqual(["0016CAF31C53", "NTMN34GF70E6"]);
+    expect(enviado).toEqual({ series: ["0016CAF00A01", "NTMN00TEST01", "0016CAF00A01", "NO-EXISTE", "VIEJO-1", "ASIG-1"] });
+    expect(envoltura.findAll(".renglon-equipo .serie").map((s) => s.text())).toEqual(["0016CAF00A01", "NTMN00TEST01"]);
     const revision = envoltura.find(".revision").text();
     expect(revision).toContain("Se revisaron 5 números de serie: se agregaron 2 equipos.");
     expect(revision).toContain("No están en el inventario (1): NO-EXISTE");
     expect(revision).toContain("Ya están dados de baja (1): VIEJO-1 (BAJA-2026-0001)");
     expect(revision).toContain("Siguen asignados (1): ASIG-1 (Ana López)");
-    expect(revision).toContain("Venían repetidos en la lista (1): 0016CAF31C53");
+    expect(revision).toContain("Venían repetidos en la lista (1): 0016CAF00A01");
     // En el cuadro quedan solo las series con problema.
     expect((envoltura.find("#lista-series").element as HTMLTextAreaElement).value).toBe("NO-EXISTE\nVIEJO-1\nASIG-1");
 
