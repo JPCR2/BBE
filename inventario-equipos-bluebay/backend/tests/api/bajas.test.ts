@@ -396,7 +396,7 @@ describe("POST /api/bajas/verificar-series", () => {
     const empleado = await crearEmpleado({ nombre: "Ana", apellidos: "López" });
     await db.asignacion.create({ data: { equipoId: asignado.id, empleadoId: empleado.id } });
 
-    const res = await verificar([" 0016caf00a01 ", "ntmn34gf70e6", "0016CAF00A01", "NO-EXISTE", "viejo-1", "ASIG-1", "", "   "]);
+    const res = await verificar([" 0016caf00a01 ", "ntmn00test01", "0016CAF00A01", "NO-EXISTE", "viejo-1", "ASIG-1", "", "   "]);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       revisadas: 5,
