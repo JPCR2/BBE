@@ -292,7 +292,7 @@ function registrarOtra() {
         <span class="marca-exito"><Icono nombre="hecho" :tamano="28" :grosor="2.25" /></span>
         <h2>Baja registrada · <span class="serie">{{ registrada.folio }}</span></h2>
         <p>
-          Se registraron {{ resumenRenglones(registrada.equipos.length, registrada.articulos.length) }}.
+          Se {{ registrada.equipos.length + registrada.articulos.length === 1 ? "registró" : "registraron" }} {{ resumenRenglones(registrada.equipos.length, registrada.articulos.length) }}.
           <template v-if="registrada.equipos.length === 1">El equipo ya aparece como dado de baja.</template>
           <template v-else-if="registrada.equipos.length > 1">Los equipos ya aparecen como dados de baja.</template>
           <template v-if="registrada.mantenimientosCancelados > 0">

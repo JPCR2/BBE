@@ -378,6 +378,7 @@ describe("Registrar baja", () => {
     await flushPromises();
     await enviarYConfirmar();
     expect(envoltura.find(".exito").text()).not.toContain("Se cancel");
+    expect(envoltura.find(".exito").text()).toContain("Se registró 1 equipo. El equipo ya aparece como dado de baja.");
     await envoltura.findAll(".exito button").find((b) => b.text() === "Registrar otra baja")!.trigger("click");
     expect(envoltura.findAll(".renglon-equipo")).toHaveLength(0);
     expect((envoltura.find("#elaboro").element as HTMLInputElement).value).toBe("Joel Polanco");

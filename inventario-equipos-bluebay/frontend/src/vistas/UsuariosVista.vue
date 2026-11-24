@@ -155,7 +155,8 @@ async function cambiarEstado() {
               <span v-else class="insignia insignia-exito">Activo</span>
             </td>
             <td>{{ u.ultimoAcceso ? fechaHora(u.ultimoAcceso) : "Nunca ha entrado" }}</td>
-            <td class="acciones">
+            <td>
+              <div class="acciones">
               <button type="button" class="boton boton-secundario chico" :aria-label="`Editar a ${u.nombre}`" @click="dialogo = { tipo: 'edicion', usuario: u }">
                 <Icono nombre="editar" :tamano="16" />Editar
               </button>
@@ -178,6 +179,7 @@ async function cambiarEstado() {
                   Eliminar
                 </button>
               </template>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -232,7 +234,8 @@ async function cambiarEstado() {
 .persona { display: flex; align-items: center; gap: 10px; font-weight: 600; }
 .apagado td { color: var(--texto-2); }
 .apagado .avatar { background: var(--neutro-fondo); color: var(--texto-2); }
-.acciones { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.acciones { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: nowrap; }
+.acciones .boton { white-space: nowrap; }
 .chico { min-height: 36px; padding: 0 12px; font-size: 14px; gap: 6px; }
 .roles dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0 0 12px; }
 .roles dt { font-weight: 700; }
